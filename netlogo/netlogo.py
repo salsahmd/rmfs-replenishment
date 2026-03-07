@@ -1044,7 +1044,8 @@ def reload_pods_only(sku_sample_path="../sku_sample.csv", midpoint_seconds=0):
             "items.csv", "pods.csv",
             "items_slots_configuration.csv",
             "assign_order.csv", "netlogo.state",
-            "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv"
+            "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv",
+            "order-finished.csv",
         ]
         for f in files_to_remove:
             if os.path.exists(f):

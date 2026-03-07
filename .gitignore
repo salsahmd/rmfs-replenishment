@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Simulation generated files (recreated each run)
+netlogo/netlogo.state
+netlogo/assign_order.csv
+netlogo/order-finished.csv
+netlogo/generated_order.csv
+netlogo/generated_backlog.csv
+netlogo/generated_database_order.csv
+netlogo/items.csv
+netlogo/pods.csv
+netlogo/items_slots_configuration.csv
+netlogo/skus_data.csv
+netlogo/sorted_skus_data.csv
+netlogo/pod_info.csv
+
+# OS
+.DS_Store

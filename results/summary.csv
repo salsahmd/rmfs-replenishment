@@ -1,2 +1,2 @@
 total_hours,k_clusters,phase1_ticks,phase2_ticks,phase1_orders_finished,phase2_orders_finished,phase1_final_energy,phase2_final_energy,phase1_stop_and_go,phase2_stop_and_go,phase1_total_turning,phase2_total_turning,phase1_peak_job_queue,phase2_peak_job_queue
-1.0,5,12000,12000,15,0,874783.0762867148,874783.0762867148,1110,0,755,755,43,0
+1.0,5,12000,12000,73,43,3987205.610517998,3285225.295743194,4660,4169,3366,2946,49,25

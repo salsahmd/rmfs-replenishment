@@ -266,6 +266,7 @@ class Inventory(Universe):
         new_orders = new_file_df[(new_file_df['order_arrival']<= current_second) & 
                                (new_file_df['order_arrival'] > previous_second) &
                                (new_file_df['status'] == -3)]
+
         grouped_orders = new_orders.groupby('order_id')
 
         for order_id, group in grouped_orders:
@@ -327,8 +328,10 @@ class Inventory(Universe):
 
         for order in self.order_manager.unfinished_orders:
             assign_order_df = pd.read_csv('assign_order.csv')
+            # Ensure columns that may contain mixed types are object dtype
+            assign_order_df['assigned_station'] = assign_order_df['assigned_station'].astype(object)
+            assign_order_df['assigned_pod'] = assign_order_df['assigned_pod'].astype(object)
             if order.station_id is None:
-                break
                 # available_station = self.station_manager.find_available_picking_station()
                 # available_station = self.station_manager.find_highest_supplyrate_station_rika(order.skus, self.pod_manager)
                 # NOTE: THIS ONE IS TO ASSIGN ORDER TO A PICKING STATION
