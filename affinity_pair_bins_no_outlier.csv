@@ -1,0 +1,9 @@
+range,pair_count
+< 0.000 (zero),26888864
+0.000 - <0.003,784074
+0.003 - <0.007,0
+0.007 - <0.010,0
+0.010 - <0.013,0
+>= 0.013 (extra),0
+TOTAL unique pairs,27673080
+NONZERO unique pairs,784216
