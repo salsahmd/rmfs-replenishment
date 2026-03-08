@@ -248,7 +248,11 @@ class Inventory(Universe):
     def find_new_orders(self):
         file_path = 'assign_order.csv'
         if os.path.exists(file_path):
-            assign_order_df = pd.read_csv(file_path)
+            assign_order_df = pd.read_csv(
+                file_path,
+                dtype={"assigned_station": "object", "assigned_pod": "object"},
+                low_memory=False,
+            )
             # pass
         else:
             orders_df = pd.read_csv('generated_order.csv')
@@ -257,7 +261,11 @@ class Inventory(Universe):
             assign_order_df['assigned_pod'] = None
             assign_order_df['status'] = -3
             assign_order_df.to_csv('assign_order.csv', index=False)
-        new_file_df = pd.read_csv(file_path)
+        new_file_df = pd.read_csv(
+            file_path,
+            dtype={"assigned_station": "object", "assigned_pod": "object"},
+            low_memory=False,
+        )
                   
         current_second = self.next_process_tick
         previous_second = (self.next_process_tick - 1)
@@ -327,10 +335,11 @@ class Inventory(Universe):
         # misal kamu mau tau total keseluruhan -> x = sum(self.get_total_empty_bin().values())
 
         for order in self.order_manager.unfinished_orders:
-            assign_order_df = pd.read_csv('assign_order.csv')
-            # Ensure columns that may contain mixed types are object dtype
-            assign_order_df['assigned_station'] = assign_order_df['assigned_station'].astype(object)
-            assign_order_df['assigned_pod'] = assign_order_df['assigned_pod'].astype(object)
+            assign_order_df = pd.read_csv(
+                'assign_order.csv',
+                dtype={"assigned_station": "object", "assigned_pod": "object"},
+                low_memory=False,
+            )
             if order.station_id is None:
                 # available_station = self.station_manager.find_available_picking_station()
                 # available_station = self.station_manager.find_highest_supplyrate_station_rika(order.skus, self.pod_manager)
