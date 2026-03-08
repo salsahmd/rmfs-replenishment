@@ -38,7 +38,9 @@ pip install -r netlogo/requirements.txt
 
 ## Quick Start
 
-Run from the **project root** directory:
+Run from the **project root** directory.
+
+### Re-clustering pipeline (Phase 1 → re-cluster → Phase 2)
 
 ```bash
 # Short smoke test (≈ 2 min)
@@ -51,11 +53,28 @@ python3 pipeline/run_pipeline.py --total-hours 1 --k 5
 python3 pipeline/run_pipeline.py --total-hours 24 --k 5
 ```
 
-### CLI Options
+Results are saved to `results/`.
+
+### Baseline pipeline (single continuous run, no re-clustering)
+
+```bash
+# Short smoke test (≈ 2 min)
+python3 pipeline/run_baseline.py --total-hours 0.25 --k 5
+
+# 1-hour simulation
+python3 pipeline/run_baseline.py --total-hours 1 --k 5
+
+# Full 24-hour simulation
+python3 pipeline/run_baseline.py --total-hours 24 --k 5
+```
+
+Results are saved to `results_baseline/`.
+
+### CLI Options (both pipelines)
 
 | Flag | Default | Description |
 |---|---|---|
-| `--total-hours` | `24` | Total simulation duration in hours. Split equally between Phase 1 and Phase 2. |
+| `--total-hours` | `24` | Total simulation duration in hours. |
 | `--k` | `5` | Number of k-means clusters for SKU grouping. |
 
 ## Output
@@ -90,7 +109,8 @@ Console output shows a live progress bar and a side-by-side comparison of Phase 
 ```
 salsa-rmfs/
 ├── pipeline/
-│   ├── run_pipeline.py        # Main entry point — orchestrates both phases
+│   ├── run_pipeline.py        # Re-clustering pipeline (Phase 1 → re-cluster → Phase 2)
+│   ├── run_baseline.py        # Baseline pipeline (single continuous run)
 │   └── mid_sim_features.py    # Extracts features from simulation data
 ├── netlogo/
 │   ├── netlogo.py             # Simulation setup, tick loop, pod/order config

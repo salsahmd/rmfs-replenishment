@@ -18,5 +18,9 @@ netlogo/skus_data.csv
 netlogo/sorted_skus_data.csv
 netlogo/pod_info.csv
 
+# Results (optional — gitignore if too large)
+# results/
+# results_baseline/
+
 # OS
 .DS_Store
