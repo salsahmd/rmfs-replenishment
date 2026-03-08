@@ -184,7 +184,11 @@ class Inventory(Universe):
             # SKU Replenished Triggered
             if(replenished_status == True): sku_need_replenished.append(sku)
     
-            assign_order_df = pd.read_csv('assign_order.csv')
+            assign_order_df = pd.read_csv(
+                'assign_order.csv',
+                dtype={"assigned_station": "object", "assigned_pod": "object"},
+                low_memory=False,
+            )
             assign_order_df.loc[((assign_order_df['order_id'] == order.order_id) & (assign_order_df['item_id'] == sku)), 'status'] = 1
             assign_order_df.loc[((assign_order_df['order_id'] == order.order_id) & (assign_order_df['item_id'] == sku)), 'order_finished'] = int(self._tick)
             assign_order_df.to_csv('assign_order.csv', index=False)
