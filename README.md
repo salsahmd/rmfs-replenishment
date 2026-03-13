@@ -29,48 +29,65 @@ git clone <repo-url>
 cd salsa-rmfs
 
 # 2. Create a virtual environment (recommended)
-python3 -m venv netlogo/.venv
-source netlogo/.venv/bin/activate
+python -m venv netlogo/.venv
 
-# 3. Install dependencies
+# 3. Activate the virtual environment
+#    macOS / Linux:
+source netlogo/.venv/bin/activate
+#    Windows (Command Prompt):
+#    netlogo\.venv\Scripts\activate.bat
+#    Windows (PowerShell):
+#    netlogo\.venv\Scripts\Activate.ps1
+
+# 4. Install dependencies
 pip install -r netlogo/requirements.txt
 ```
 
 ## Quick Start
 
+### Jupyter Notebooks (recommended)
+
+The easiest way to run the pipelines is via the Jupyter notebooks in `pipeline/`. They include **tqdm progress bars** so you can monitor simulation progress in real time.
+
+1. Open `pipeline/run_pipeline.ipynb` (re-clustering) or `pipeline/run_baseline.ipynb` (baseline)
+2. Set `TOTAL_HOURS` and `K` in the first code cell
+3. Run all cells
+
+### Command Line
+
 Run from the **project root** directory.
 
-### Re-clustering pipeline (Phase 1 → re-cluster → Phase 2)
+#### Re-clustering pipeline (Phase 1 → re-cluster → Phase 2)
 
 ```bash
-# Short smoke test (≈ 2 min)
-python3 pipeline/run_pipeline.py --total-hours 0.25 --k 5
+# Short smoke test
+python pipeline/run_pipeline.py --total-hours 0.25 --k 5
 
-# 1-hour simulation (≈ 10 min)
-python3 pipeline/run_pipeline.py --total-hours 1 --k 5
+# 1-hour simulation
+python pipeline/run_pipeline.py --total-hours 1 --k 5
 
 # Full 24-hour simulation
-python3 pipeline/run_pipeline.py --total-hours 24 --k 5
+python pipeline/run_pipeline.py --total-hours 24 --k 5
 ```
 
 Results are saved to `results/`.
 
-### Baseline pipeline (single continuous run, no re-clustering)
+#### Baseline pipeline (single continuous run, no re-clustering)
 
 ```bash
-# Short smoke test (≈ 2 min)
-python3 pipeline/run_baseline.py --total-hours 0.25 --k 5
+# Short smoke test
+python pipeline/run_baseline.py --total-hours 0.25 --k 5
 
 # 1-hour simulation
-python3 pipeline/run_baseline.py --total-hours 1 --k 5
+python pipeline/run_baseline.py --total-hours 1 --k 5
 
 # Full 24-hour simulation
-python3 pipeline/run_baseline.py --total-hours 24 --k 5
+python pipeline/run_baseline.py --total-hours 24 --k 5
 ```
 
 Results are saved to `results_baseline/`.
 
-### CLI Options (both pipelines)
+#### CLI Options (both pipelines)
 
 | Flag | Default | Description |
 |---|---|---|
@@ -79,29 +96,49 @@ Results are saved to `results_baseline/`.
 
 ## Output
 
-Results are saved to the `results/` directory:
+Results are saved to the `results/` (or `results_baseline/`) directory:
 
 | File | Description |
 |---|---|
-| `summary.csv` | One-row summary: orders finished, energy, stop-and-go, turning, peak/avg job queue for each phase. |
+| `summary.csv` | One-row summary with all metrics for each phase. |
 | `tick_metrics.csv` | Per-tick time-series of energy, job queue length, stop-and-go count, and turning. |
 | `phase1_orders.csv` | Completed orders from Phase 1. |
 | `phase2_orders.csv` | Completed orders from Phase 2. |
 
-Console output shows a live progress bar and a side-by-side comparison of Phase 1 vs Phase 2 at the end:
+### Metrics
+
+| Metric | Definition |
+|---|---|
+| Orders finished | Total orders completed during the phase. |
+| Total energy | Cumulative robot energy consumption. |
+| Stop & go | Total stop-and-go events (congestion indicator). |
+| Total turning | Cumulative turning movements. |
+| Peak / Avg job queue | Maximum and average job queue length. |
+| Avg / Max cycle time | Average and maximum order cycle time (order complete - process start). |
+| **Order throughput** | Orders finished / orders generated. |
+| **Replenishment/pick ratio** | Total replenishment tasks / total pick tasks. |
+| **Pod utilization** | Total units picked from pods / pod visits to picking stations. |
+
+Example output:
 
 ```
   Phase 1 (before re-cluster)
-    Orders finished:   73
-    Total energy:      3987205.61
-    Peak job queue:    49
-    Avg job queue:     31.4
+    Orders finished:    73
+    Total energy:       3987205.61
+    Peak job queue:     49
+    Avg job queue:      31.4
+    Order throughput:   0.4562 (160 generated)
+    Replen/pick ratio:  0.2341 (45R / 192P)
+    Pod utilization:    3.1250 (250 units / 80 visits)
 
   Phase 2 (after re-cluster)
-    Orders finished:   43
-    Total energy:      3285225.30
-    Peak job queue:    25
-    Avg job queue:     4.2
+    Orders finished:    43
+    Total energy:       3285225.30
+    Peak job queue:     25
+    Avg job queue:      4.2
+    Order throughput:   0.2688 (160 generated)
+    Replen/pick ratio:  0.1875 (30R / 160P)
+    Pod utilization:    3.5000 (210 units / 60 visits)
 ```
 
 ## Project Structure
@@ -109,8 +146,10 @@ Console output shows a live progress bar and a side-by-side comparison of Phase 
 ```
 salsa-rmfs/
 ├── pipeline/
-│   ├── run_pipeline.py        # Re-clustering pipeline (Phase 1 → re-cluster → Phase 2)
-│   ├── run_baseline.py        # Baseline pipeline (single continuous run)
+│   ├── run_pipeline.py        # Re-clustering pipeline (CLI)
+│   ├── run_pipeline.ipynb     # Re-clustering pipeline (notebook with progress bars)
+│   ├── run_baseline.py        # Baseline pipeline (CLI)
+│   ├── run_baseline.ipynb     # Baseline pipeline (notebook with progress bars)
 │   └── mid_sim_features.py    # Extracts features from simulation data
 ├── netlogo/
 │   ├── netlogo.py             # Simulation setup, tick loop, pod/order config
@@ -126,6 +165,7 @@ salsa-rmfs/
 │   └── config.dictionary      # Simulation parameters (robots, pods, stations)
 ├── clustering/                # Standalone clustering experiments
 ├── results/                   # Output from pipeline runs
+├── results_baseline/          # Output from baseline runs
 └── README.md
 ```
 

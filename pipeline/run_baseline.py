@@ -35,6 +35,15 @@ N_INIT = 20
 
 CLUSTER_FEATURES = ["mean_demand", "cv_demand", "demand_frequency", "avg_affinity", "max_affinity"]
 
+# Item cluster order frequency configuration (must sum to 1.0)
+ITEMS_ORDERS_CLASS_CONFIG = {
+    4: 0.45,  # 45%
+    0: 0.25,  # 25%
+    2: 0.20,  # 20%
+    1: 0.10,  # 10%
+    3: 0.05,  #  5%
+}
+
 BAR_WIDTH = 40
 
 
@@ -153,7 +162,52 @@ def run_phase(target_tick, phase_name):
 
 # ── results ──────────────────────────────────────────────────
 
-def save_results(run_data, orders_df, args, results_dir):
+def compute_extra_metrics(orders_finished, generated_order_path, pod_info_path):
+    """Compute order throughput, replenishment/pick ratio, and pod utilization."""
+    metrics = {}
+
+    # Order throughput = orders finished / orders generated
+    orders_generated = 0
+    if os.path.exists(generated_order_path):
+        gen_df = pd.read_csv(generated_order_path, dtype=str)
+        orders_generated = gen_df["order_id"].nunique()
+    metrics["orders_generated"] = orders_generated
+    metrics["order_throughput"] = (
+        orders_finished / orders_generated if orders_generated > 0 else 0.0
+    )
+
+    # Replenishment/pick ratio and pod utilization from pod_info.csv
+    total_picks = 0
+    total_replenishments = 0
+    total_units_picked = 0
+    pod_visits = 0
+    if os.path.exists(pod_info_path):
+        pod_df = pd.read_csv(pod_info_path)
+        if not pod_df.empty and "task_type" in pod_df.columns:
+            pick_df = pod_df[pod_df["task_type"] == 1]
+            replen_df = pod_df[pod_df["task_type"] == 2]
+            total_picks = len(pick_df)
+            total_replenishments = len(replen_df)
+            total_units_picked = pick_df["qty"].sum() if "qty" in pick_df.columns else 0
+            # Pod visit = unique (pod_id, processed_time) for pick tasks
+            if not pick_df.empty and "pod_id" in pick_df.columns and "processed_time" in pick_df.columns:
+                pod_visits = pick_df.groupby(["pod_id", "processed_time"]).ngroups
+
+    metrics["total_picks"] = total_picks
+    metrics["total_replenishments"] = total_replenishments
+    metrics["replenishment_pick_ratio"] = (
+        total_replenishments / total_picks if total_picks > 0 else 0.0
+    )
+    metrics["total_units_picked"] = total_units_picked
+    metrics["pod_visits"] = pod_visits
+    metrics["pod_utilization"] = (
+        total_units_picked / pod_visits if pod_visits > 0 else 0.0
+    )
+
+    return metrics
+
+
+def save_results(run_data, orders_df, args, results_dir, extra=None):
     header("RESULTS")
 
     m = run_data["metrics"]
@@ -176,6 +230,11 @@ def save_results(run_data, orders_df, args, results_dir):
             sys.stderr.write(f"    Avg cycle time:    {orders_df['cycle_time'].mean():.1f}s\n")
             sys.stderr.write(f"    Max cycle time:    {orders_df['cycle_time'].max():.1f}s\n")
 
+    if extra:
+        sys.stderr.write(f"    Order throughput:  {extra['order_throughput']:.4f} ({extra['orders_generated']} generated)\n")
+        sys.stderr.write(f"    Replen/pick ratio: {extra['replenishment_pick_ratio']:.4f} ({extra['total_replenishments']}R / {extra['total_picks']}P)\n")
+        sys.stderr.write(f"    Pod utilization:   {extra['pod_utilization']:.4f} ({extra['total_units_picked']} units / {extra['pod_visits']} visits)\n")
+
     summary = {
         "total_hours": args.total_hours,
         "k_clusters": args.k,
@@ -188,6 +247,17 @@ def save_results(run_data, orders_df, args, results_dir):
         "peak_job_queue": m["job_queue_len"].max() if not m.empty else 0,
         "avg_job_queue": round(m["job_queue_len"].mean(), 1) if not m.empty else 0,
     }
+
+    if extra:
+        summary["orders_generated"] = extra["orders_generated"]
+        summary["order_throughput"] = round(extra["order_throughput"], 4)
+        summary["total_picks"] = extra["total_picks"]
+        summary["total_replenishments"] = extra["total_replenishments"]
+        summary["replenishment_pick_ratio"] = round(extra["replenishment_pick_ratio"], 4)
+        summary["total_units_picked"] = extra["total_units_picked"]
+        summary["pod_visits"] = extra["pod_visits"]
+        summary["pod_utilization"] = round(extra["pod_utilization"], 4)
+
     summary_path = os.path.join(results_dir, "summary.csv")
     pd.DataFrame([summary]).to_csv(summary_path, index=False)
 
@@ -234,7 +304,8 @@ def main():
         reload_data_for_phase(
             sku_sample_path=sku_sample_rel,
             order_period_hours=total_order_hours,
-            backlog_period_hours=backlog_order_hours
+            backlog_period_hours=backlog_order_hours,
+            items_orders_class_configuration=ITEMS_ORDERS_CLASS_CONFIG
         )
     status("Simulation initialized.")
 
@@ -250,8 +321,12 @@ def main():
         order_finished = pd.read_csv("order-finished.csv")
         order_finished.to_csv(os.path.join(results_dir, "orders.csv"), index=False)
 
+    # Compute extra metrics
+    finished_count = int(run_data["metrics"]["orders_finished"].iloc[-1]) if not run_data["metrics"].empty else 0
+    extra = compute_extra_metrics(finished_count, "generated_order.csv", "pod_info.csv")
+
     os.chdir(PROJECT_ROOT)
-    save_results(run_data, order_finished, args, results_dir)
+    save_results(run_data, order_finished, args, results_dir, extra=extra)
 
 
 if __name__ == "__main__":
