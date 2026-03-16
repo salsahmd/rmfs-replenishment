@@ -864,6 +864,74 @@ def tick():
         return "An error occurred. See the details above."
 
 
+def drain_simulation(max_drain_ticks=50000):
+    """
+    Stop accepting new orders and run until all in-flight work finishes.
+
+    Sets next_process_tick to infinity so find_new_orders() is never called
+    again, then keeps ticking until:
+      - job_queue is empty
+      - all robots are idle with no jobs
+      - no unfinished orders remain
+
+    Returns (drain_tick_count, final_sim_tick, metrics_during_drain).
+    """
+    try:
+        with open('netlogo.state', 'rb') as f:
+            universe: Inventory = pickle.load(f)
+
+        # Freeze order processing — no new orders will be loaded
+        universe.next_process_tick = int(1e15)
+
+        # Save modified state so tick() picks it up
+        with open('netlogo.state', 'wb') as f:
+            pickle.dump(universe, f)
+
+        drain_ticks = 0
+        final_tick = universe._tick
+
+        while drain_ticks < max_drain_ticks:
+            result = tick()
+            if isinstance(result, str):
+                print(f"ERROR during drain: {result}")
+                break
+
+            drain_ticks += 1
+            final_tick = result[7]   # _tick
+            job_queue_len = result[2]
+            orders_finished = result[6]
+
+            # Re-load universe to check detailed state
+            with open('netlogo.state', 'rb') as f:
+                universe = pickle.load(f)
+
+            unfinished = len(universe.order_manager.unfinished_orders)
+            robots_busy = sum(
+                1 for o in universe._objects
+                if getattr(o, 'object_type', '') == 'robot'
+                and (o.job is not None and not o.job.is_finished)
+            )
+
+            if drain_ticks % 200 == 0:
+                print(f"  Draining... tick={final_tick:.1f}, "
+                      f"queue={job_queue_len}, unfinished={unfinished}, "
+                      f"robots_busy={robots_busy}")
+
+            if job_queue_len == 0 and unfinished == 0 and robots_busy == 0:
+                print(f"  Drain complete: {drain_ticks} ticks, "
+                      f"sim_time={final_tick:.1f}s, "
+                      f"orders_finished={orders_finished}")
+                return drain_ticks, final_tick, orders_finished
+
+        print(f"  Drain timeout after {max_drain_ticks} ticks "
+              f"(queue={job_queue_len}, unfinished={unfinished})")
+        return drain_ticks, final_tick, result[6]
+
+    except Exception as e:
+        traceback.print_exc()
+        return 0, 0, 0
+
+
 def setup_py():
     def install_package(package_name):
         """Install a Python package using pip."""
