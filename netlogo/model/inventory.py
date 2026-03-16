@@ -34,6 +34,7 @@ class Inventory(Universe):
         self.intersection_manager = IntersectionManager(self.landscape.current_date_string)
         self.update_intersection_using_RL = False
         self.zoning = False
+        self.drain_mode = False  # When True, skip loading new orders but still process existing ones
         # Mutable defaults must be instance attributes (not class-level)
         # to avoid sharing state across instances and to survive pickling.
         self.map = []
@@ -78,7 +79,8 @@ class Inventory(Universe):
         # Process orders at scheduled intervals
         if int(self._tick) == self.next_process_tick:
             print(f"Processing orders at tick {self._tick}")
-            self.find_new_orders()
+            if not self.drain_mode:
+                self.find_new_orders()
             self.process_orders()
             if self.update_intersection_using_RL:
                 self.intersection_manager.update_allowed_direction_using_q_model(int(self._tick))

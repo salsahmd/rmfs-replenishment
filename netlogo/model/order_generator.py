@@ -223,7 +223,16 @@ def gen_order(order_cycle_time,
         arrival_times_list = list()
         last_arrival_time  = 0
         for i in range(1, order_period_time+1):
-            arrival_times = gen_order_arrival_time(order_cycle_time=order_cycle_time)
+            # Every 3rd hour is a peak hour: boost order rate by 30-60%
+            if i % 3 == 0:
+                peak_factor = 1.0 + np.random.uniform(0.30, 0.60)
+                hourly_rate = int(round(order_cycle_time * peak_factor))
+                print(f"  Hour {i}: PEAK — {hourly_rate} orders/h "
+                      f"(+{(peak_factor-1)*100:.0f}% boost)")
+            else:
+                hourly_rate = order_cycle_time
+
+            arrival_times = gen_order_arrival_time(order_cycle_time=hourly_rate)
             if i==1:
                 index_start_arrival_time = np.where(np.array(arrival_times) > order_start_arrival_time)[0][0]
 

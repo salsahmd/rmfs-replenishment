@@ -864,24 +864,27 @@ def tick():
         return "An error occurred. See the details above."
 
 
-def drain_simulation(max_drain_ticks=50000):
+def drain_simulation(max_drain_ticks=50000, stall_limit=500):
     """
     Stop accepting new orders and run until all in-flight work finishes.
 
-    Sets next_process_tick to infinity so find_new_orders() is never called
-    again, then keeps ticking until:
-      - job_queue is empty
-      - all robots are idle with no jobs
-      - no unfinished orders remain
+    Enables drain_mode on the universe so find_new_orders() is skipped but
+    process_orders() still runs — existing unfinished orders continue to get
+    pods assigned and generate robot jobs.
 
-    Returns (drain_tick_count, final_sim_tick, metrics_during_drain).
+    Exits when:
+      - job_queue is empty AND all robots are idle AND no unfinished orders, OR
+      - no progress for `stall_limit` consecutive ticks (unfulfillable orders,
+        e.g. item stock depleted from all pods)
+
+    Returns (drain_tick_count, final_sim_tick, orders_finished).
     """
     try:
         with open('netlogo.state', 'rb') as f:
             universe: Inventory = pickle.load(f)
 
-        # Freeze order processing — no new orders will be loaded
-        universe.next_process_tick = int(1e15)
+        # Freeze order loading — existing orders still get processed
+        universe.drain_mode = True
 
         # Save modified state so tick() picks it up
         with open('netlogo.state', 'wb') as f:
@@ -889,6 +892,9 @@ def drain_simulation(max_drain_ticks=50000):
 
         drain_ticks = 0
         final_tick = universe._tick
+        last_progress_tick = 0
+        last_orders_finished = 0
+        prev_robots_busy = -1
 
         while drain_ticks < max_drain_ticks:
             result = tick()
@@ -905,27 +911,44 @@ def drain_simulation(max_drain_ticks=50000):
             with open('netlogo.state', 'rb') as f:
                 universe = pickle.load(f)
 
-            unfinished = len(universe.order_manager.unfinished_orders)
             robots_busy = sum(
                 1 for o in universe._objects
                 if getattr(o, 'object_type', '') == 'robot'
-                and (o.job is not None and not o.job.is_finished)
+                and o.job is not None and not o.job.is_finished
             )
+            unfinished = len(universe.order_manager.unfinished_orders)
+
+            # Track progress
+            if orders_finished > last_orders_finished or robots_busy > 0:
+                last_progress_tick = drain_ticks
+                last_orders_finished = orders_finished
 
             if drain_ticks % 200 == 0:
                 print(f"  Draining... tick={final_tick:.1f}, "
                       f"queue={job_queue_len}, unfinished={unfinished}, "
-                      f"robots_busy={robots_busy}")
+                      f"robots_busy={robots_busy}, "
+                      f"orders_finished={orders_finished}")
 
+            # Clean exit: all work done
             if job_queue_len == 0 and unfinished == 0 and robots_busy == 0:
                 print(f"  Drain complete: {drain_ticks} ticks, "
                       f"sim_time={final_tick:.1f}s, "
                       f"orders_finished={orders_finished}")
                 return drain_ticks, final_tick, orders_finished
 
+            # Stall exit: no progress, queue empty, robots idle
+            ticks_since_progress = drain_ticks - last_progress_tick
+            if (ticks_since_progress >= stall_limit
+                    and job_queue_len == 0 and robots_busy == 0):
+                print(f"  Drain stalled after {drain_ticks} ticks "
+                      f"(no progress for {stall_limit} ticks). "
+                      f"{unfinished} orders unfulfillable. "
+                      f"orders_finished={orders_finished}")
+                return drain_ticks, final_tick, orders_finished
+
         print(f"  Drain timeout after {max_drain_ticks} ticks "
               f"(queue={job_queue_len}, unfinished={unfinished})")
-        return drain_ticks, final_tick, result[6]
+        return drain_ticks, final_tick, orders_finished
 
     except Exception as e:
         traceback.print_exc()
