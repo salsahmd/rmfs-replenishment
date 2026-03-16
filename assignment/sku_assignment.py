@@ -638,40 +638,51 @@ def build_outputs(detail_rows: list, pods: list,
 # =============================================================================
 # MAIN
 # =============================================================================
-def main():
+def run_assignment(base_dir=None, sku_sample_path=None,
+                   items_dict_path=None, items_slots_config_path=None):
+    """
+    Run the FFD assignment algorithm with configurable paths.
+
+    Parameters
+    ----------
+    base_dir : str or Path, optional
+        Base directory for default file resolution. Defaults to CWD.
+    sku_sample_path : str or Path, optional
+        Path to sku_sample.csv (overrides base_dir default).
+    items_dict_path : str or Path, optional
+        Path to items_dictionary_cleaned.csv (overrides base_dir default).
+    items_slots_config_path : str or Path, optional
+        Path to items_slots_configuration.csv (overrides base_dir default).
+
+    Returns
+    -------
+    detail_df : pd.DataFrame
+        The sku_assignment_detail table (one row per pod/slot assignment).
+    """
+    base = Path(base_dir) if base_dir else Path.cwd()
+    sku_sample_p = Path(sku_sample_path) if sku_sample_path else base / "sku_sample.csv"
+    items_dict_p = Path(items_dict_path) if items_dict_path else base / "items_dictionary_cleaned.csv"
+    items_slots_p = Path(items_slots_config_path) if items_slots_config_path else base / "items_slots_configuration.csv"
+
     _t0 = time.perf_counter()
     print("=" * 62)
     print("SKU-to-Pod Assignment  (DC6 / ABC-XYZ Greedy FFD)")
     print("=" * 62)
-    print(f"  MAX_POD_WEIGHT  = {MAX_POD_WEIGHT} kg")
-    print(f"  LEAD_TIME       = {LEAD_TIME}")
-    print(f"  SERVICE_LEVEL_Z = {SERVICE_LEVEL_Z}  (90 %)")
-    print(f"  CLUSTER_PRIORITY= {CLUSTER_PRIORITY}")
-    print(f"  POD_STRUCTURE   = {POD_STRUCTURE}  ({len(POD_STRUCTURE)} slots/pod)")
-    print()
 
-    # ── Load data ────────────────────────────────────────────────────────────
-    print("Loading items_slots_configuration.csv …")
-    config_df = load_config(ITEMS_SLOTS_CONFIG)
+    config_df = load_config(items_slots_p)
     print(f"  {len(config_df)} best-config rows  ({config_df['item_code'].nunique()} unique SKUs)")
 
-    print("Loading sku_sample.csv …")
-    cluster_df = load_sku_sample(SKU_SAMPLE_FILE)
+    cluster_df = load_sku_sample(sku_sample_p)
     sample_codes = set(cluster_df["item_code"].unique())
     print(f"  {len(cluster_df)} SKUs in sample")
 
-    # Filter config and items_dict to only item_codes present in sku_sample
     config_df = config_df[config_df["item_code"].isin(sample_codes)].copy()
-    print(f"  {len(config_df)} config rows after filtering to sample item_codes")
 
-    print("Loading items_dictionary_cleaned.csv …")
-    items_dict_df = load_items_dict(ITEMS_DICT_FILE)
+    items_dict_df = load_items_dict(items_dict_p)
     items_dict_df = items_dict_df[items_dict_df["item_code"].isin(sample_codes)].copy()
     total_boxes = items_dict_df["initial_inventory_boxes"].sum()
-    print(f"  {len(items_dict_df)} SKUs — item_initial_quantity_inventory (filtered to sample)")
     print(f"  Total initial inventory: {total_boxes:,} boxes")
 
-    # ── Build item table ─────────────────────────────────────────────────────
     items_df = build_item_table(cluster_df, config_df, items_dict_df)
 
     no_config = items_df[items_df["num_compatible_slots"] == 0]
@@ -793,11 +804,8 @@ def main():
     active_pods         = len(pods)
 
     # Space utilisation
-    # = total used slot-volume across all assignments
-    #   / total available slot-volume across all pods
     slot_vols = {st: 0.0 for st in set(POD_STRUCTURE)}
     for st in POD_STRUCTURE:
-        # grab slot volume from any config row for this slot_type
         sample = config_df[config_df["slot_type"] == st]
         if not sample.empty:
             r = sample.iloc[0]
@@ -806,73 +814,38 @@ def main():
     total_slot_volume = sum(slot_vols[st] for st in POD_STRUCTURE) * active_pods
     used_volume = 0.0
     if not detail_df.empty and "vol_util_slot" in detail_df.columns:
-        # vol_util_slot is fraction of slot volume used; recover absolute used volume
         for _, dr in detail_df.iterrows():
             st  = int(dr["slot_type"])
             vu  = float(dr["vol_util_slot"])
             used_volume += vu * slot_vols.get(st, 0.0)
     space_util_pct = (used_volume / total_slot_volume * 100) if total_slot_volume > 0 else 0.0
 
-    # Per-pod unique SKU count
     if not detail_df.empty:
         skus_per_pod    = detail_df.groupby("pod_id")["item_code"].nunique()
         avg_skus_per_pod = skus_per_pod.mean()
     else:
         avg_skus_per_pod = 0.0
 
-    # Average classes per pod
     avg_classes_per_pod = pod_summary_df["num_classes"].mean() if not pod_summary_df.empty else 0.0
 
-    # Average number of pods per SKU (only SKUs that were assigned)
     if not detail_df.empty:
         pods_per_sku     = detail_df.groupby("item_code")["pod_id"].nunique()
         avg_pods_per_sku = pods_per_sku.mean()
     else:
         avg_pods_per_sku = 0.0
 
-    print("\n" + "=" * 62)
-    print("ASSIGNMENT RESULTS")
-    print("=" * 62)
-
-    print("\n  --- SKU Coverage ---")
-    print(f"  Total eligible SKUs            : {total_skus_eligible:>8}")
-    print(f"  Assigned SKUs                  : {assigned_skus:>8}")
-    print(f"  Unassigned SKUs                : {unassigned_n:>8}")
-    print(f"  Assignment rate                : {assigned_skus/max(total_skus_eligible,1)*100:>7.1f} %")
-
-    print("\n  --- Pod Statistics ---")
-    print(f"  Active pods                    : {active_pods:>8}")
-    print(f"  Space utilisation              : {space_util_pct:>7.2f} %")
-    print(f"  Avg unique classes per pod     : {avg_classes_per_pod:>7.2f}")
-    print(f"  Avg unique SKUs per pod        : {avg_skus_per_pod:>7.2f}")
-    print(f"  Avg pods per SKU (assigned)    : {avg_pods_per_sku:>7.2f}")
-
-    if not pod_summary_df.empty:
-        pods_ge2 = int((pod_summary_df["num_classes"] >= 2).sum())
-        avg_wt   = pod_summary_df["total_weight"].mean()
-        max_wt   = pod_summary_df["total_weight"].max()
-        avg_slots_used = pod_summary_df["used_slots"].mean()
-        print(f"  Pods with ≥ 2 classes          : {pods_ge2:>8}  ({pods_ge2/active_pods*100:.1f} %)")
-        print(f"  Avg slots used per pod         : {avg_slots_used:>7.1f} / {len(POD_STRUCTURE)}")
-        print(f"  Avg pod weight                 : {avg_wt:>7.1f} kg")
-        print(f"  Max pod weight                 : {max_wt:>7.1f} kg")
-
-    print(f"\n  --- Runtime ---")
-    if runtime_sec < 60:
-        print(f"  Total runtime                  : {runtime_sec:>7.2f} s")
-    else:
-        mm, ss = divmod(runtime_sec, 60)
-        print(f"  Total runtime                  : {int(mm):>4} min {ss:.1f} s")
+    print(f"\n  Pods: {active_pods}, SKUs assigned: {assigned_skus}/{total_skus_eligible}, "
+          f"space util: {space_util_pct:.1f}%, runtime: {runtime_sec:.1f}s")
 
     if unassigned_n > 0:
-        print(f"\n  --- Unassigned Breakdown (by cluster) ---")
-        print(pd.DataFrame(unassigned_list)["cluster"]
-              .value_counts().sort_index()
-              .rename("count").to_string())
+        print(f"  Unassigned SKUs: {unassigned_n}")
 
-    print("\nSaved:")
-    for p in [OUT_DETAIL, OUT_SKU_ASSIGNMENT, OUT_POD_SUMMARY, OUT_UNASSIGNED]:
-        print(f"  {p.resolve()}")
+    return detail_df
+
+
+def main():
+    """CLI entry point — calls run_assignment() with default CWD-relative paths."""
+    run_assignment()
 
 
 if __name__ == "__main__":

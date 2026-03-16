@@ -977,7 +977,6 @@ def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hour
         print("Step 1/4: Updated items_dictionary.csv with new clusters.")
 
         files_to_remove = [
-            "items.csv", "pods.csv",
             "generated_order.csv", "generated_backlog.csv",
             "generated_database_order.csv",
             "items_slots_configuration.csv",
@@ -987,7 +986,7 @@ def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hour
         for f in files_to_remove:
             if os.path.exists(f):
                 os.remove(f)
-        print("Step 2/4: Cleaned old generated files.")
+        print("Step 2/4: Cleaned old generated files (preserved items.csv, pods.csv).")
 
         print("Step 3/4: Re-initializing simulation...")
         result = setup_with_duration(order_period_hours, backlog_period_hours, items_orders_class_configuration)
@@ -1041,9 +1040,8 @@ def reload_pods_only(sku_sample_path="../sku_sample.csv", midpoint_seconds=0):
         else:
             print("Step 2/5: WARNING - generated_order.csv not found!")
 
-        # Step 3: Remove pod/state files (but NOT order files)
+        # Step 3: Remove state files (but NOT order files or items/pods)
         files_to_remove = [
-            "items.csv", "pods.csv",
             "items_slots_configuration.csv",
             "assign_order.csv", "netlogo.state",
             "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv",
