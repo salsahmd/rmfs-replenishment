@@ -97,16 +97,13 @@ def run_clustering(sku_df, k):
 
 
 def run_initial_clustering(sku_sample_path, k):
-    header("PHASE 0  Initial K-Means Clustering")
+    header("PHASE 0  Load Clusters from sku_sample.csv")
     sku_df = pd.read_csv(sku_sample_path)
     sku_df["item_code"] = sku_df["item_code"].astype(str)
-    for col in CLUSTER_FEATURES:
-        sku_df[col] = pd.to_numeric(sku_df[col], errors="coerce").fillna(0)
-    sku_df = run_clustering(sku_df, k)
-    sku_df.to_csv(sku_sample_path, index=False)
+    sku_df["cluster"] = sku_df["cluster"].astype(int)
 
     dist = sku_df["cluster"].value_counts().sort_index()
-    status(f"Clustered {len(sku_df)} SKUs into {k} groups: {dict(dist)}")
+    status(f"Loaded {len(sku_df)} SKUs with {sku_df['cluster'].nunique()} clusters: {dict(dist)}")
     return sku_df
 
 
@@ -164,11 +161,15 @@ def run_reclustering(sku_sample_path, sim_features, k):
 
     changed = (sku_df["cluster"] != sku_df["cluster_phase1"]).sum()
     sku_df = sku_df.drop(columns=["cluster_phase1"])
-    sku_df.to_csv(sku_sample_path, index=False)
+
+    # Save to sku_sample_phase2.csv — never overwrite the original sku_sample.csv
+    phase2_path = os.path.join(os.path.dirname(sku_sample_path), "sku_sample_phase2.csv")
+    sku_df.to_csv(phase2_path, index=False)
 
     dist = sku_df["cluster"].value_counts().sort_index()
     status(f"Re-clustered: {changed} SKUs changed cluster. Distribution: {dict(dist)}")
-    return sku_df
+    status(f"Saved to sku_sample_phase2.csv (original sku_sample.csv unchanged)")
+    return phase2_path
 
 
 # ── simulation runner ────────────────────────────────────────
@@ -438,14 +439,15 @@ def main():
     status(f"Extracted features for {len(sim_features)} SKUs")
 
     os.chdir(original_cwd)
-    run_reclustering(sku_sample_path, sim_features, args.k)
+    phase2_sku_path = run_reclustering(sku_sample_path, sim_features, args.k)
+    phase2_sku_rel = os.path.relpath(phase2_sku_path, netlogo_dir)
     os.chdir(netlogo_dir)
 
     # ── Reload with new clusters (keep order stream) ──
     status("Reloading simulation with new clusters...")
     with suppress_stdout():
         reload_pods_only(
-            sku_sample_path=sku_sample_rel,
+            sku_sample_path=phase2_sku_rel,
             midpoint_seconds=half_seconds
         )
     status("Simulation reloaded with new pod assignments.")

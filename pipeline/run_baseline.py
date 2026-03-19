@@ -73,24 +73,16 @@ def header(title):
 # ── clustering ───────────────────────────────────────────────
 
 def run_initial_clustering(sku_sample_path, k):
-    header("PHASE 0  Initial K-Means Clustering")
+    header("PHASE 0  Load Clusters from sku_sample.csv")
     sku_df = pd.read_csv(sku_sample_path)
     sku_df["item_code"] = sku_df["item_code"].astype(str)
-    for col in CLUSTER_FEATURES:
-        sku_df[col] = pd.to_numeric(sku_df[col], errors="coerce").fillna(0)
-
-    X = sku_df[CLUSTER_FEATURES].copy()
-    X["mean_demand"] = np.log1p(X["mean_demand"])
-    scaler = MinMaxScaler()
-    X_scaled = scaler.fit_transform(X)
-    km = KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=N_INIT)
-    sku_df["cluster"] = km.fit_predict(X_scaled)
-
-    sku_df.to_csv(sku_sample_path, index=False)
+    sku_df["cluster"] = sku_df["cluster"].astype(int)
 
     dist = sku_df["cluster"].value_counts().sort_index()
-    status(f"Clustered {len(sku_df)} SKUs into {k} groups: {dict(dist)}")
+    status(f"Loaded {len(sku_df)} SKUs with {sku_df['cluster'].nunique()} clusters: {dict(dist)}")
     return sku_df
+
+
 
 
 # ── simulation runner ────────────────────────────────────────
