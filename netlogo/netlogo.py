@@ -238,21 +238,19 @@ def initRobots(universe: Inventory):
         universe.addObject(robot)
 
 
-def draw_layout(universe, order_period_hours=2, backlog_period_hours=3, items_orders_class_configuration=None):
+def draw_layout(universe, order_period_hours=2, backlog_period_hours=3):
     # Check if generated_pod.csv exists in the current directory
     if os.path.exists('generated_pod.csv'):
         print("Generated pod already exist, delete generated_pod.csv if you want to change")
-        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours, items_orders_class_configuration)
+        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours)
     else:
         layout = Layout()
         # This one to generate new configuration
         layout.generate()
-        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours, items_orders_class_configuration)
+        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours)
 
 
-def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, backlog_period_hours=3, items_orders_class_configuration=None):
-    if items_orders_class_configuration is None:
-        items_orders_class_configuration = {0: 0.25, 1: 0.10, 2: 0.20, 3: 0.05, 4: 0.45}
+def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, backlog_period_hours=3):
     draw_storage_from_generated_file(universe)
 
     # order_period_time must be an integer ≥ 1 (number of 1-hour cycles)
@@ -264,7 +262,6 @@ def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, b
     config_orders(
         initial_order=20,
         total_requested_item=500,  # Number of SKU in warehouse
-        items_orders_class_configuration=items_orders_class_configuration,  # Item cluster configuration in warehouse
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
         order_period_time=order_period_int,  # the total hours (integer, min 1)
@@ -276,7 +273,6 @@ def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, b
     config_orders(
         initial_order=50,  # Initial order in backlog
         total_requested_item=500,  # Number of SKU in warehouse
-        items_orders_class_configuration=items_orders_class_configuration,  # Item cluster configuration in warehouse
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
         order_period_time=backlog_period_int,
@@ -1018,7 +1014,7 @@ def reload_data(sku_sample_path="../sku_sample.csv"):
         return "An error occurred during reload. See details above."
 
 
-def setup_with_duration(order_period_hours=2, backlog_period_hours=3, items_orders_class_configuration=None):
+def setup_with_duration(order_period_hours=2, backlog_period_hours=3):
     """
     Same as setup() but with configurable order generation duration.
     Used by the pipeline to control how many hours of orders are generated.
@@ -1033,7 +1029,7 @@ def setup_with_duration(order_period_hours=2, backlog_period_hours=3, items_orde
             os.remove(pod_info)
         universe = Inventory()
 
-        draw_layout(universe, order_period_hours, backlog_period_hours, items_orders_class_configuration)
+        draw_layout(universe, order_period_hours, backlog_period_hours)
 
         universe.tick_to_second = 0.15
 
@@ -1049,7 +1045,7 @@ def setup_with_duration(order_period_hours=2, backlog_period_hours=3, items_orde
         return "An error occurred. See the details above."
 
 
-def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hours=2, backlog_period_hours=3, items_orders_class_configuration=None):
+def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hours=2, backlog_period_hours=3):
     """
     Full reload: update clusters, regenerate ALL files (pods + orders), restart.
     Used for Phase 1 initial setup.
@@ -1080,7 +1076,7 @@ def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hour
         print("Step 2/4: Cleaned old generated files (preserved items.csv, pods.csv).")
 
         print("Step 3/4: Re-initializing simulation...")
-        result = setup_with_duration(order_period_hours, backlog_period_hours, items_orders_class_configuration)
+        result = setup_with_duration(order_period_hours, backlog_period_hours)
         print("Step 4/4: Simulation reloaded successfully!")
         print("=" * 60)
 

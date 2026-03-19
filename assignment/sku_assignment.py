@@ -117,14 +117,15 @@ def parse_dot_comma_float(val) -> float:
 
 def load_sku_dict(path: Path) -> pd.DataFrame:
     """
-    Load sku_dictionary.csv — box_weight and units_per_box only.
-    (item_initial_inventory here is the safety-stock formula result, not used.)
+    Load sku_dictionary.csv — box_weight, units_per_box, and box_initial_inventory
+    (safety-stock formula result: ceil(item_initial_inventory / units_per_box)).
     """
     df = normalize_cols(read_csv_auto_sep(path))
-    df["item_code"]    = df["item_code"].astype(str)
-    df["box_weight"]   = pd.to_numeric(df["box_weight"],               errors="coerce").fillna(0.0)
-    df["units_per_box"] = pd.to_numeric(df["number_of_item_in_a_box"], errors="coerce").fillna(1.0).clip(lower=1.0)
-    return df[["item_code", "box_weight", "units_per_box"]]
+    df["item_code"]               = df["item_code"].astype(str)
+    df["box_weight"]              = pd.to_numeric(df["box_weight"],               errors="coerce").fillna(0.0)
+    df["units_per_box"]           = pd.to_numeric(df["number_of_item_in_a_box"],  errors="coerce").fillna(1.0).clip(lower=1.0)
+    df["initial_inventory_boxes"] = pd.to_numeric(df["box_initial_inventory"],    errors="coerce").fillna(0.0).clip(lower=0).astype(int)
+    return df[["item_code", "box_weight", "units_per_box", "initial_inventory_boxes"]]
 
 
 def load_items_dict(path: Path) -> pd.DataFrame:
@@ -678,8 +679,11 @@ def run_assignment(base_dir=None, sku_sample_path=None,
 
     config_df = config_df[config_df["item_code"].isin(sample_codes)].copy()
 
-    items_dict_df = load_items_dict(items_dict_p)
+    sku_dict_p = base / "sku_dictionary.csv"
+    sku_dict_df = load_sku_dict(sku_dict_p)
+    items_dict_df = sku_dict_df[["item_code", "initial_inventory_boxes"]].copy()
     items_dict_df = items_dict_df[items_dict_df["item_code"].isin(sample_codes)].copy()
+    items_dict_df["qty_inv_items"] = 0  # not available from sku_dictionary
     total_boxes = items_dict_df["initial_inventory_boxes"].sum()
     print(f"  Total initial inventory: {total_boxes:,} boxes")
 

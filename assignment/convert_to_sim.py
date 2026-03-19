@@ -65,7 +65,7 @@ def generate_items_csv(sku_sample_path, items_dict_path, output_path,
     # Fill missing values
     for col in ["item_order_frequency", "item_initial_quantity_inventory"]:
         merged[col] = pd.to_numeric(merged.get(col, 0), errors="coerce").fillna(0).astype(int)
-    for col in ["box_length", "box_width", "box_height", "box_volume", "item_volume"]:
+    for col in ["box_length", "box_width", "box_height", "box_volume", "item_volume", "cv_demand"]:
         merged[col] = pd.to_numeric(merged.get(col, 0), errors="coerce").fillna(0.0)
     merged["item_unit"] = merged.get("item_unit", "PCS").fillna("PCS")
     merged["item_quantity_order_unique"] = merged.get("item_quantity_order_unique", "[]").fillna("[]")
@@ -75,7 +75,7 @@ def generate_items_csv(sku_sample_path, items_dict_path, output_path,
 
     # Build final items DataFrame in exact PodGenerator column order
     items = merged[[
-        "item_code", "item_class", "item_order_frequency",
+        "item_code", "item_class", "item_order_frequency", "cv_demand",
         "item_initial_quantity_inventory",
         "box_length", "box_width", "box_height", "box_volume", "box_weight",
         "number_of_item_in_a_box", "item_volume", "item_weight", "item_unit",

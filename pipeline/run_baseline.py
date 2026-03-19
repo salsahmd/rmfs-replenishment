@@ -35,14 +35,6 @@ N_INIT = 20
 
 CLUSTER_FEATURES = ["mean_demand", "cv_demand", "demand_frequency", "avg_affinity", "max_affinity"]
 
-# Item cluster order frequency configuration (must sum to 1.0)
-ITEMS_ORDERS_CLASS_CONFIG = {
-    4: 0.45,  # 45%
-    0: 0.25,  # 25%
-    2: 0.20,  # 20%
-    1: 0.10,  # 10%
-    3: 0.05,  #  5%
-}
 
 BAR_WIDTH = 40
 
@@ -305,7 +297,6 @@ def main():
             sku_sample_path=sku_sample_rel,
             order_period_hours=total_order_hours,
             backlog_period_hours=backlog_order_hours,
-            items_orders_class_configuration=ITEMS_ORDERS_CLASS_CONFIG
         )
     status("Simulation initialized.")
 
