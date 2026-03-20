@@ -184,14 +184,7 @@ def gen_order(order_cycle_time,
         arrival_times_list = list()
         last_arrival_time  = 0
         for i in range(1, order_period_time+1):
-            # Every 3rd hour is a peak hour: boost order rate by 30-60%
-            if i % 3 == 0:
-                peak_factor = 1.0 + np.random.uniform(0.30, 0.60)
-                hourly_rate = int(round(order_cycle_time * peak_factor))
-                print(f"  Hour {i}: PEAK — {hourly_rate} orders/h "
-                      f"(+{(peak_factor-1)*100:.0f}% boost)")
-            else:
-                hourly_rate = order_cycle_time
+            hourly_rate = order_cycle_time
 
             arrival_times = gen_order_arrival_time(order_cycle_time=hourly_rate)
             if i==1:
@@ -207,13 +200,12 @@ def gen_order(order_cycle_time,
         orders = range(0, len(arrival_times_list))
         items_in_order = np.random.geometric(p=0.3, size=len(orders))
 
-        # Seasonal cluster configs: one Dirichlet profile per 5-hour window
+        # Two cluster configs: one before hour 10, one from hour 10 onwards
         cluster_ids = sorted(items["item_class"].unique())
-        n_windows = max(1, int(np.ceil(order_period_time / 5)))
-        seasonal_configs = []
-        for _ in range(n_windows):
-            weights = np.random.dirichlet(np.ones(len(cluster_ids)))
-            seasonal_configs.append(dict(zip(cluster_ids, weights)))
+        seasonal_configs = [
+            dict(zip(cluster_ids, np.random.dirichlet(np.ones(len(cluster_ids))))),  # hours 0-10
+            dict(zip(cluster_ids, np.random.dirichlet(np.ones(len(cluster_ids))))),  # hours 10+
+        ]
 
         database_order = pd.DataFrame(columns=['order_dum', 
                                                'order_type', 
@@ -236,10 +228,9 @@ def gen_order(order_cycle_time,
             # print(f"Order {order_id} has {items_num} items")
 
             item_exist = list()
-            # Determine which 5-hour window this order falls in
+            # Use pre-hour-10 config or post-hour-10 config
             arrival_sec = arrival_times_list[i]
-            window_idx = min(int(arrival_sec / (5 * 3600)), len(seasonal_configs) - 1)
-            config = seasonal_configs[window_idx]
+            config = seasonal_configs[0] if arrival_sec < 10 * 3600 else seasonal_configs[1]
 
             for _ in range(items_num):
                 chosen_cluster = np.random.choice(
