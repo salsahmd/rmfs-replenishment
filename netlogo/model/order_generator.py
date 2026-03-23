@@ -100,9 +100,7 @@ def gen_backlog(initial_order, total_requested_item, quantity_range, dev_mode):
                 ]
                 if len(cluster_items) == 0:
                     break
-                cv_vals = cluster_items["cv_demand"].clip(lower=1e-6)
-                probs = (cv_vals / cv_vals.sum()).to_numpy()
-                item_id = np.random.choice(cluster_items.index.to_list(), p=probs)
+                item_id = np.random.choice(cluster_items.index.to_list())
                 qty = get_random_quantity(quantity_range=quantity_range)
                 order_arrival = 0
                 item_exist.append(item_id)
@@ -161,6 +159,47 @@ def gen_order_arrival_time(order_cycle_time):
     return arrival_times
 
 
+# ── MMPP order generator ──────────────────────────────────────
+
+LOW_BASE  = np.array([0.22, 0.09, 0.20, 0.05, 0.44])
+HIGH_BASE = np.array([0.28, 0.12, 0.22, 0.04, 0.34])
+DIRICHLET_SCALE = 5.0
+
+
+def simulate_mmpp_states(total_hours,
+                         avg_duration_low=3.0,
+                         avg_duration_high=2.0,
+                         initial_state='low'):
+    """
+    Two-state MMPP following Lamballais et al. (2022).
+    Returns a list of states ('low'/'high') of length total_hours.
+    """
+    states = []
+    current_state = initial_state
+    hour = 0
+    while hour < total_hours:
+        if current_state == 'low':
+            duration = np.random.exponential(avg_duration_low)
+        else:
+            duration = np.random.exponential(avg_duration_high)
+        end_hour = min(hour + duration, total_hours)
+        while hour < end_hour:
+            states.append(current_state)
+            hour += 1
+        current_state = 'high' if current_state == 'low' else 'low'
+    return states[:total_hours]
+
+
+def get_class_config(state):
+    """
+    Draw cluster proportions from Dirichlet centered on state-specific base.
+    Called once per state period (not per order).
+    """
+    alphas = LOW_BASE * DIRICHLET_SCALE if state == 'low' else HIGH_BASE * DIRICHLET_SCALE
+    proportions = np.random.dirichlet(alphas)
+    return dict(zip([0, 1, 2, 3, 4], proportions))
+
+
 def gen_order(order_cycle_time,
               order_period_time,
               order_start_arrival_time,
@@ -200,12 +239,20 @@ def gen_order(order_cycle_time,
         orders = range(0, len(arrival_times_list))
         items_in_order = np.random.geometric(p=0.3, size=len(orders))
 
-        # Two cluster configs: one before hour 10, one from hour 10 onwards
+        # MMPP: simulate states and draw one Dirichlet config per contiguous state period
         cluster_ids = sorted(items["item_class"].unique())
-        seasonal_configs = [
-            dict(zip(cluster_ids, np.random.dirichlet(np.ones(len(cluster_ids))))),  # hours 0-10
-            dict(zip(cluster_ids, np.random.dirichlet(np.ones(len(cluster_ids))))),  # hours 10+
-        ]
+        hourly_states = simulate_mmpp_states(order_period_time)
+
+        state_configs = {}   # hour (0-indexed) → cluster proportion dict
+        current_mmpp_state = None
+        current_config = None
+        for h, state in enumerate(hourly_states):
+            if state != current_mmpp_state:
+                current_config = get_class_config(state)
+                current_mmpp_state = state
+            state_configs[h] = current_config
+
+        print(f"  MMPP states: {hourly_states.count('high')}h high, {hourly_states.count('low')}h low")
 
         database_order = pd.DataFrame(columns=['order_dum', 
                                                'order_type', 
@@ -228,9 +275,9 @@ def gen_order(order_cycle_time,
             # print(f"Order {order_id} has {items_num} items")
 
             item_exist = list()
-            # Use pre-hour-10 config or post-hour-10 config
             arrival_sec = arrival_times_list[i]
-            config = seasonal_configs[0] if arrival_sec < 10 * 3600 else seasonal_configs[1]
+            arrival_hour = min(int(arrival_sec / 3600), order_period_time - 1)
+            config = state_configs[arrival_hour]
 
             for _ in range(items_num):
                 chosen_cluster = np.random.choice(
@@ -242,9 +289,7 @@ def gen_order(order_cycle_time,
                 ]
                 if len(cluster_items) == 0:
                     break
-                cv_vals = cluster_items["cv_demand"].clip(lower=1e-6)
-                probs = (cv_vals / cv_vals.sum()).to_numpy()
-                item_id = np.random.choice(cluster_items.index.to_list(), p=probs)
+                item_id = np.random.choice(cluster_items.index.to_list())
                 qty = get_random_quantity(quantity_range=quantity_range)
                 item_exist.append(item_id)
 
