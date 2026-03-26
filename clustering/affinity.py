@@ -4,7 +4,8 @@ from scipy.sparse import csr_matrix, save_npz
 from pathlib import Path
 
 # ---------- CONFIG ----------
-DATA_PATH = Path("../raw_order.csv")  # if script is in /clustering
+BASE = Path(__file__).parent
+DATA_PATH = BASE / "../raw_order.csv"
 ORDER_COL = "order_id"
 SKU_COL = "item_code"
 SEP = ";"
@@ -49,10 +50,10 @@ from scipy.sparse import load_npz
 
 def check_affinity(sku_i: str, sku_j: str):
     # Load saved sparse matrix
-    A = load_npz("affinity_sparse.npz")
+    A = load_npz(str(BASE / "affinity_sparse.npz"))
 
     # Load SKU index mapping
-    sku_codes = pd.read_csv("affinity_sku_index.csv")["item_code"].tolist()
+    sku_codes = pd.read_csv(BASE / "affinity_sku_index.csv")["item_code"].tolist()
     sku_to_idx = {sku: i for i, sku in enumerate(sku_codes)}
 
     if sku_i not in sku_to_idx:
@@ -71,15 +72,12 @@ def check_affinity(sku_i: str, sku_j: str):
     return float(affinity_value)
 
 
-# Example usage:
-check_affinity("14101074001", "10002014001")
-
 # ---------- SAVE ----------
 # Save affinity sparse matrix
-save_npz("affinity_sparse.npz", A)
+save_npz(str(BASE / "affinity_sparse.npz"), A)
 
 # Save sku index mapping (so you can interpret rows/cols)
-pd.Series(sku_codes, name="item_code").to_csv("affinity_sku_index.csv", index=False)
+pd.Series(sku_codes, name="item_code").to_csv(BASE / "affinity_sku_index.csv", index=False)
 
 # Save sparse affinity as triplet format (i, j, value)
 A_coo = A.tocoo()
@@ -90,8 +88,11 @@ affinity_sparse_df = pd.DataFrame({
     "affinity": A_coo.data
 })
 
-affinity_sparse_df.to_csv("affinity_sparse_pairs.csv", index=False)
+affinity_sparse_df.to_csv(BASE / "affinity_sparse_pairs.csv", index=False)
 
 print("Saved: affinity_sparse.npz")
 print("Saved: affinity_sku_index.csv")
 print("Saved non-zero affinity pairs to CSV.")
+
+# Example usage:
+check_affinity("14101074001", "10002014001")

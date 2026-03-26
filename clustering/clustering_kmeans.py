@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,27 +29,34 @@ def prepare_features(df, feature_columns):
 
 
 # ==============================
-# 3. FIND BEST K (Silhouette)
+# 3. EVALUATE K (Silhouette + Elbow)
 # ==============================
-def find_best_k(X_scaled, min_k=2, max_k=8):
-    best_k = 2
-    best_score = -1
-    scores = {}
+def evaluate_k(X_scaled, min_k=2, max_k=8):
+    silhouette_scores = {}
+    inertias = {}
 
     for k in range(min_k, max_k + 1):
         model = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = model.fit_predict(X_scaled)
+        silhouette_scores[k] = silhouette_score(X_scaled, labels)
+        inertias[k] = model.inertia_
+        print(f"k={k}, silhouette={silhouette_scores[k]:.4f}, inertia={inertias[k]:.2f}")
 
-        score = silhouette_score(X_scaled, labels)
-        scores[k] = score
-        print(f"k={k}, silhouette score={score:.4f}")
+    ks = list(range(min_k, max_k + 1))
+    _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-        if score > best_score:
-            best_score = score
-            best_k = k
+    ax1.plot(ks, [silhouette_scores[k] for k in ks], marker='o')
+    ax1.set_title("Silhouette Score")
+    ax1.set_xlabel("k")
+    ax1.set_ylabel("Score")
 
-    print("\nBest k:", best_k)
-    return best_k
+    ax2.plot(ks, [inertias[k] for k in ks], marker='o')
+    ax2.set_title("Elbow Graph (Inertia)")
+    ax2.set_xlabel("k")
+    ax2.set_ylabel("Inertia")
+
+    plt.tight_layout()
+    plt.show()
 
 
 # ==============================
@@ -67,24 +75,30 @@ def perform_clustering(df, X_scaled, best_k):
 if __name__ == "__main__":
 
     # 🔹 CHANGE THIS TO YOUR CSV FILE
-    file_path = "data.csv"
+    file_path = os.path.join(os.path.dirname(__file__), "../sku_sample.csv")
 
-    # 🔹 CHANGE TO YOUR FEATURE COLUMNS
-    feature_columns = ["feature1", "feature2"]
+    feature_columns = ["mean_demand", "cv_demand", "demand_frequency", "max_affinity"]
 
     df = load_data(file_path)
     X, X_scaled = prepare_features(df, feature_columns)
 
-    best_k = find_best_k(X_scaled, 2, 8)
+    evaluate_k(X_scaled, 2, 8)
+    best_k = int(input("\nEnter number of clusters (k): "))
 
     df_clustered = perform_clustering(df, X_scaled, best_k)
 
-    df_clustered.to_csv("clustered_output.csv", index=False)
-    print("Clustering finished. Saved as clustered_output.csv")
+    # Save cluster column back to sku_sample.csv
+    df_clustered.to_csv(file_path, index=False)
+    print("Cluster results saved to sku_sample.csv\n")
 
-    # Optional: plot first 2 features
-    plt.scatter(X_scaled[:, 0], X_scaled[:, 1], c=df_clustered["cluster"])
-    plt.title("Clustering Result")
-    plt.xlabel("Feature 1")
-    plt.ylabel("Feature 2")
-    plt.show()
+    # Display cluster summary
+    summary = df_clustered.groupby("cluster").agg(
+        num_sku=("item_code", "count"),
+        mean_demand=("mean_demand", "mean"),
+        mean_cv=("cv_demand", "mean"),
+        mean_frequency=("demand_frequency", "mean"),
+        mean_max_affinity=("max_affinity", "mean"),
+    ).reset_index()
+
+    print("Cluster Summary:")
+    print(summary.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
