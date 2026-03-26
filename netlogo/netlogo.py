@@ -1,5 +1,4 @@
 import csv
-import math
 import pickle
 import os
 import traceback
@@ -238,33 +237,30 @@ def initRobots(universe: Inventory):
         universe.addObject(robot)
 
 
-def draw_layout(universe, order_period_hours=2, backlog_period_hours=3):
+def draw_layout(universe):
     # Check if generated_pod.csv exists in the current directory
     if os.path.exists('generated_pod.csv'):
         print("Generated pod already exist, delete generated_pod.csv if you want to change")
-        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours)
+        draw_layout_from_generated_file(universe)
     else:
         layout = Layout()
         # This one to generate new configuration
         layout.generate()
-        draw_layout_from_generated_file(universe, order_period_hours, backlog_period_hours)
+        draw_layout_from_generated_file(universe)
 
 
-def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, backlog_period_hours=3):
+def draw_layout_from_generated_file(universe: Inventory):
     draw_storage_from_generated_file(universe)
-
-    # order_period_time must be an integer ≥ 1 (number of 1-hour cycles)
-    order_period_int = max(1, int(math.ceil(order_period_hours)))
-    backlog_period_int = max(1, int(math.ceil(backlog_period_hours)))
 
     # Config Orders
     assign_skus_to_pods(universe.pod_manager)
     config_orders(
         initial_order=20,
         total_requested_item=500,  # Number of SKU in warehouse
+        items_orders_class_configuration={"A": 0.6, "B": 0.3, "C": 0.1},  # Item class configuration in warehouse
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
-        order_period_time=order_period_int,  # the total hours (integer, min 1)
+        order_period_time=2,  # the total hours
         order_start_arrival_time=5,  # Start time of order arrival
         date=1,
         sim_ver=1,
@@ -273,9 +269,10 @@ def draw_layout_from_generated_file(universe: Inventory, order_period_hours=2, b
     config_orders(
         initial_order=50,  # Initial order in backlog
         total_requested_item=500,  # Number of SKU in warehouse
+        items_orders_class_configuration={"A": 0.6, "B": 0.3, "C": 0.1},  # Item class configuration in warehouse
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
-        order_period_time=backlog_period_int,
+        order_period_time=3,
         order_start_arrival_time=5,
         date=1,
         sim_ver=2,
@@ -745,10 +742,10 @@ def assign_skus_to_pods(pod_manager):
         # Fungsi generate pods.csv
         # PodGenerator(pod_manager).generate()
         PodGenerator(pod_types=[0], pod_num=[420], total_sku=500,
-                      items_class_conf={0: 0.27, 1: 0.17, 2: 0.19, 3: 0.33, 4: 0.04},
-                      items_pods_inventory_levels={0: 0.4, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.6},
-                      items_warehouse_inventory_levels={0: 0.4, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.6},
-                      items_pods_class_conf={0: 0.30, 1: 0.20, 2: 0.20, 3: 0.25, 4: 0.05},
+                      items_class_conf={"A": 0.1, "B": 0.3, "C": 0.6},
+                      items_pods_inventory_levels={"A": 0.4, "B": 0.5, "C": 0.6},
+                      items_warehouse_inventory_levels={"A": 0.4, "B": 0.5, "C": 0.6},
+                      items_pods_class_conf={"A": 0.6, "B": 0.3, "C": 0.1},
                       pod_manager=pod_manager,
                       dev_mode=False).generate()
         assign_skus_to_pods_from_file(pod_manager)
@@ -842,113 +839,23 @@ def tick():
 
         # Perform a simulation tick
         next_result = universe.tick()
+        if universe._tick > 1000:
+            return IndexError
 
         # Save updated state
         with open('netlogo.state', 'wb') as config_dictionary_file:
             pickle.dump(universe, config_dictionary_file)
 
         # Return all required information for NetLogo
-        # [0] object positions, [1] energy, [2] job queue len, [3] stop&go,
-        # [4] turning, [5] station orders, [6] orders finished, [7] _tick
+        # next_result[0] contains object positions
+        # next_result[1] contains station orders
         return [next_result[0], universe.total_energy, len(universe.job_queue), universe.stop_and_go,
-                universe.total_turning, next_result[1],
-                universe.order_manager.finished_count, universe._tick]
+                universe.total_turning, next_result[1]]
 
     except Exception as e:
         # Print complete stack trace
         traceback.print_exc()
         return "An error occurred. See the details above."
-
-
-def drain_simulation(max_drain_ticks=50000, stall_limit=500):
-    """
-    Stop accepting new orders and run until all in-flight work finishes.
-
-    Enables drain_mode on the universe so find_new_orders() is skipped but
-    process_orders() still runs — existing unfinished orders continue to get
-    pods assigned and generate robot jobs.
-
-    Exits when:
-      - job_queue is empty AND all robots are idle AND no unfinished orders, OR
-      - no progress for `stall_limit` consecutive ticks (unfulfillable orders,
-        e.g. item stock depleted from all pods)
-
-    Returns (drain_tick_count, final_sim_tick, orders_finished).
-    """
-    try:
-        with open('netlogo.state', 'rb') as f:
-            universe: Inventory = pickle.load(f)
-
-        # Freeze order loading — existing orders still get processed
-        universe.drain_mode = True
-
-        # Save modified state so tick() picks it up
-        with open('netlogo.state', 'wb') as f:
-            pickle.dump(universe, f)
-
-        drain_ticks = 0
-        final_tick = universe._tick
-        last_progress_tick = 0
-        last_orders_finished = 0
-        prev_robots_busy = -1
-
-        while drain_ticks < max_drain_ticks:
-            result = tick()
-            if isinstance(result, str):
-                print(f"ERROR during drain: {result}")
-                break
-
-            drain_ticks += 1
-            final_tick = result[7]   # _tick
-            job_queue_len = result[2]
-            orders_finished = result[6]
-
-            # Re-load universe to check detailed state
-            with open('netlogo.state', 'rb') as f:
-                universe = pickle.load(f)
-
-            robots_busy = sum(
-                1 for o in universe._objects
-                if getattr(o, 'object_type', '') == 'robot'
-                and o.job is not None and not o.job.is_finished
-            )
-            unfinished = len(universe.order_manager.unfinished_orders)
-
-            # Track progress
-            if orders_finished > last_orders_finished or robots_busy > 0:
-                last_progress_tick = drain_ticks
-                last_orders_finished = orders_finished
-
-            if drain_ticks % 200 == 0:
-                print(f"  Draining... tick={final_tick:.1f}, "
-                      f"queue={job_queue_len}, unfinished={unfinished}, "
-                      f"robots_busy={robots_busy}, "
-                      f"orders_finished={orders_finished}")
-
-            # Clean exit: all work done
-            if job_queue_len == 0 and unfinished == 0 and robots_busy == 0:
-                print(f"  Drain complete: {drain_ticks} ticks, "
-                      f"sim_time={final_tick:.1f}s, "
-                      f"orders_finished={orders_finished}")
-                return drain_ticks, final_tick, orders_finished
-
-            # Stall exit: no progress, queue empty, robots idle
-            ticks_since_progress = drain_ticks - last_progress_tick
-            if (ticks_since_progress >= stall_limit
-                    and job_queue_len == 0 and robots_busy == 0):
-                print(f"  Drain stalled after {drain_ticks} ticks "
-                      f"(no progress for {stall_limit} ticks). "
-                      f"{unfinished} orders unfulfillable. "
-                      f"orders_finished={orders_finished}")
-                return drain_ticks, final_tick, orders_finished
-
-        print(f"  Drain timeout after {max_drain_ticks} ticks "
-              f"(queue={job_queue_len}, unfinished={unfinished})")
-        return drain_ticks, final_tick, orders_finished
-
-    except Exception as e:
-        traceback.print_exc()
-        return 0, 0, 0
 
 
 def setup_py():
@@ -962,192 +869,3 @@ def setup_py():
     # Install each package
     for package in packages:
         install_package(package)
-
-
-def reload_data(sku_sample_path="../sku_sample.csv"):
-    """
-    Stop the current simulation, update item_class from the latest kmeans
-    clustering results in sku_sample.csv, regenerate items/pods/orders,
-    and restart the simulation.
-
-    Call this from NetLogo mid-simulation to apply new clustering results.
-    Returns the same format as setup() so NetLogo can redraw.
-    """
-    try:
-        print("=" * 60)
-        print("RELOAD DATA: Updating with latest kmeans clusters...")
-        print("=" * 60)
-
-        # Step 1: Update items_dictionary.csv with latest clusters
-        from update_item_class import update_item_class_from_clusters
-        update_item_class_from_clusters(
-            items_dict_path="items_dictionary.csv",
-            sku_sample_path=sku_sample_path,
-            default_cluster=3
-        )
-        print("Step 1/4: Updated items_dictionary.csv with new clusters.")
-
-        # Step 2: Remove old generated files so they get regenerated
-        files_to_remove = [
-            "items.csv", "pods.csv",
-            "generated_order.csv", "generated_backlog.csv",
-            "generated_database_order.csv",
-            "items_slots_configuration.csv",
-            "assign_order.csv", "netlogo.state",
-            "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv"
-        ]
-        for f in files_to_remove:
-            if os.path.exists(f):
-                os.remove(f)
-        print("Step 2/4: Cleaned old generated files.")
-
-        # Step 3: Re-run setup to regenerate everything
-        print("Step 3/4: Re-initializing simulation...")
-        result = setup()
-        print("Step 4/4: Simulation reloaded successfully!")
-        print("=" * 60)
-
-        return result
-
-    except Exception as e:
-        traceback.print_exc()
-        return "An error occurred during reload. See details above."
-
-
-def setup_with_duration(order_period_hours=2, backlog_period_hours=3):
-    """
-    Same as setup() but with configurable order generation duration.
-    Used by the pipeline to control how many hours of orders are generated.
-    """
-    try:
-        assignment_path = "assign_order.csv"
-        if os.path.exists(assignment_path):
-            os.remove(assignment_path)
-
-        pod_info = "pod_info.csv"
-        if os.path.exists(pod_info):
-            os.remove(pod_info)
-        universe = Inventory()
-
-        draw_layout(universe, order_period_hours, backlog_period_hours)
-
-        universe.tick_to_second = 0.15
-
-        next_result = universe.generateResult()
-
-        with open('netlogo.state', 'wb') as config_dictionary_file:
-            pickle.dump(universe, config_dictionary_file)
-
-        return next_result[0]
-
-    except Exception as e:
-        traceback.print_exc()
-        return "An error occurred. See the details above."
-
-
-def reload_data_for_phase(sku_sample_path="../sku_sample.csv", order_period_hours=2, backlog_period_hours=3):
-    """
-    Full reload: update clusters, regenerate ALL files (pods + orders), restart.
-    Used for Phase 1 initial setup.
-    """
-    try:
-        print("=" * 60)
-        print("RELOAD FOR PHASE: Updating clusters and regenerating...")
-        print("=" * 60)
-
-        from update_item_class import update_item_class_from_clusters
-        update_item_class_from_clusters(
-            items_dict_path="items_dictionary.csv",
-            sku_sample_path=sku_sample_path,
-            default_cluster=3
-        )
-        print("Step 1/4: Updated items_dictionary.csv with new clusters.")
-
-        files_to_remove = [
-            "generated_order.csv", "generated_backlog.csv",
-            "generated_database_order.csv",
-            "items_slots_configuration.csv",
-            "assign_order.csv", "netlogo.state",
-            "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv"
-        ]
-        for f in files_to_remove:
-            if os.path.exists(f):
-                os.remove(f)
-        print("Step 2/4: Cleaned old generated files (preserved items.csv, pods.csv).")
-
-        print("Step 3/4: Re-initializing simulation...")
-        result = setup_with_duration(order_period_hours, backlog_period_hours)
-        print("Step 4/4: Simulation reloaded successfully!")
-        print("=" * 60)
-
-        return result
-
-    except Exception as e:
-        traceback.print_exc()
-        return "An error occurred during reload. See details above."
-
-
-def reload_pods_only(sku_sample_path="../sku_sample.csv", midpoint_seconds=0):
-    """
-    Mid-simulation reload: update clusters and regenerate PODS only.
-    Keeps the same order stream (generated_order.csv) but trims already-processed
-    orders and shifts arrival times so the simulation continues seamlessly.
-
-    Args:
-        sku_sample_path: Path to sku_sample.csv with new cluster assignments
-        midpoint_seconds: The simulation time (in seconds) at which we stopped Phase 1.
-                          Orders with arrival <= this value are removed.
-    """
-    try:
-        print("=" * 60)
-        print("MID-SIM RELOAD: Updating pods, keeping order stream...")
-        print("=" * 60)
-
-        # Step 1: Update item_class from new clusters
-        from update_item_class import update_item_class_from_clusters
-        update_item_class_from_clusters(
-            items_dict_path="items_dictionary.csv",
-            sku_sample_path=sku_sample_path,
-            default_cluster=3
-        )
-        print("Step 1/5: Updated items_dictionary.csv with new clusters.")
-
-        # Step 2: Trim order file — keep only future orders, shift arrival times
-        order_path = "generated_order.csv"
-        if os.path.exists(order_path):
-            orders_df = pd.read_csv(order_path)
-            total_before = len(orders_df)
-            # Keep orders that haven't arrived yet
-            remaining = orders_df[orders_df["order_arrival"] > midpoint_seconds].copy()
-            # Shift arrival times so Phase 2 starts from tick 0
-            remaining["order_arrival"] = remaining["order_arrival"] - midpoint_seconds
-            remaining.to_csv(order_path, index=False)
-            print(f"Step 2/5: Trimmed orders: {total_before} -> {len(remaining)} "
-                  f"(removed arrivals <= {midpoint_seconds}s, shifted times)")
-        else:
-            print("Step 2/5: WARNING - generated_order.csv not found!")
-
-        # Step 3: Remove state files (but NOT order files or items/pods)
-        files_to_remove = [
-            "items_slots_configuration.csv",
-            "assign_order.csv", "netlogo.state",
-            "skus_data.csv", "sorted_skus_data.csv", "pod_info.csv",
-            "order-finished.csv",
-        ]
-        for f in files_to_remove:
-            if os.path.exists(f):
-                os.remove(f)
-        print("Step 3/5: Cleaned pod/state files (kept order files).")
-
-        # Step 4: Re-setup — will regenerate pods but reuse existing generated_order.csv
-        print("Step 4/5: Re-initializing simulation with new pod assignments...")
-        # Use dummy duration; config_orders will find generated_order.csv and skip regeneration
-        result = setup_with_duration(order_period_hours=2, backlog_period_hours=3)
-        print("Step 5/5: Mid-sim reload complete!")
-        print("=" * 60)
-
-        return result
-
-    except Exception as e:
-        traceback.print_exc()
-        return "An error occurred during mid-sim reload. See details above."

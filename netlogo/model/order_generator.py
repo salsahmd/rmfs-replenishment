@@ -4,7 +4,7 @@ import pandas as pd
 
 from pathlib import Path
 
-#%% 
+#%%
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 parent_directory = os.path.dirname(current_directory)
@@ -12,7 +12,7 @@ parent_directory = os.path.dirname(current_directory)
 def get_working_path(dev_mode=False):
     if dev_mode:
         # development modes
-        
+
         # get the parent directory
         p = Path(__file__).parents[2]
 
@@ -21,8 +21,8 @@ def get_working_path(dev_mode=False):
 
         result = p
     else:
-        # production/NetLogo mode 
-        
+        # production/NetLogo mode
+
         # get the parent directory
         result = os.getcwd()
 
@@ -54,7 +54,7 @@ def get_random_quantity(quantity_range=[1, 12]):
 
     return random_qty
 
-def gen_backlog(initial_order, total_requested_item, quantity_range, dev_mode):
+def gen_backlog(initial_order, total_requested_item, items_orders_class_configuration,quantity_range,dev_mode):
 
     items_path = os.path.join(parent_directory, 'items.csv')
     orders_path = os.path.join(parent_directory, 'generated_order.csv')
@@ -69,13 +69,26 @@ def gen_backlog(initial_order, total_requested_item, quantity_range, dev_mode):
             print("Total SKU will be set to the total items in the items.csv")
             total_requested_item = total_available_item
 
+        temp = 0
+        # calculate cummulative the class_pod_conf value, to get the threshold to assign the item to the pod.
+        for key, value in items_orders_class_configuration.items():
+            if temp == 0:
+                temp = value
+            else:
+                temp += value
+                items_orders_class_configuration[key] = np.round(temp, 1)
+
+        # sort the class_pod_conf based on the value
+        items_orders_class_configuration = dict(sorted(items_orders_class_configuration.items(), key=lambda x: x[1]))
+
+        # get class_pod_conf values into list as thresholds. The keys will be used to get the item based on the class
+        thresholds = list(items_orders_class_configuration.values())
+        keys = list(items_orders_class_configuration.keys())
+        # print(keys, thresholds)
+
         orders_in_backlog = list(i * -1 for i in range(1, initial_order+1))
         items_in_order = np.random.geometric(p=0.3, size=initial_order)
         # print(orders_in_backlog, items_in_order)
-
-        # Backlog uses uniform cluster weights + CV-weighted within cluster
-        cluster_ids = sorted(items["item_class"].unique())
-        baseline_probs = np.ones(len(cluster_ids)) / len(cluster_ids)
 
         orders_backlog = pd.DataFrame(columns=[ 'order_id',
                                                'order_type',
@@ -91,30 +104,41 @@ def gen_backlog(initial_order, total_requested_item, quantity_range, dev_mode):
             items_num = items_in_order[i]
             # print(f"Order {order_id} has {items_num} items")
 
+            rand = np.random.rand(items_num)
             item_exist = list()
-            for _ in range(items_num):
-                chosen_cluster = np.random.choice(cluster_ids, p=baseline_probs)
-                cluster_items = items[
-                    (items["item_class"] == chosen_cluster) &
-                    (~items.index.isin(item_exist))
-                ]
-                if len(cluster_items) == 0:
-                    break
-                item_id = np.random.choice(cluster_items.index.to_list())
-                qty = get_random_quantity(quantity_range=quantity_range)
-                order_arrival = 0
-                item_exist.append(item_id)
-                # print("    ", item_id, qty, class_item)
+            # class_item = "A"
+            for r in rand:
+                if r <= thresholds[0]:
+                    # print(f"  below {thresholds[0]}, then the class is {keys[0]}")
+                    item_available = items.loc[(items["item_class"] == keys[0]) & (
+                        ~items.index.isin(item_exist)), "item_order_frequency"]
+                    # class_item = keys[0]
 
-                orders_backlog = pd.concat([orders_backlog,
-                                            pd.DataFrame({"order_id": [order_id],
-                                                          "order_type": [order_type],
-                                                          "item_id": [item_id],
-                                                          "item_quantity": [qty],
-                                                          "order_arrival" : [order_arrival]})
-                                            ], axis=0)
+                for l in range(len(thresholds) - 1):
+                    if thresholds[l] < r <= thresholds[l + 1]:
+                        # print(f"  between {thresholds[l]} and {thresholds[l + 1]}, then the class is {keys[l+1]}")
+                        item_available = items.loc[(items["item_class"] == keys[l+1]) & (
+                            ~items.index.isin(item_exist)), "item_order_frequency"]
+                        # class_item = keys[l+1]
 
-        orders_backlog.sort_values(by="order_id", ascending=True, inplace=True)                    
+                item_probability = (item_available / item_available.sum()).to_list()
+                item_available = item_available.index.to_list()
+                if len(item_available) > 0:
+                    item_id = np.random.choice(item_available, p=item_probability)
+                    qty = get_random_quantity(quantity_range=quantity_range)
+                    order_arrival = 0
+                    item_exist.append(item_id)
+                    # print("    ", item_id, qty, class_item)
+
+                    orders_backlog = pd.concat([orders_backlog,
+                                                pd.DataFrame({"order_id": [order_id],
+                                                              "order_type": [order_type],
+                                                              "item_id": [item_id],
+                                                              "item_quantity": [qty],
+                                                              "order_arrival" : [order_arrival]})
+                                                ], axis=0)
+
+        orders_backlog.sort_values(by="order_id", ascending=True, inplace=True)
         orders_backlog.reset_index(drop=True, inplace=True)
         orders_backlog.insert(loc=0, column="sequence_id", value=orders_backlog.index.to_list())
         orders_backlog_path = os.path.join(parent_directory, 'generated_backlog.csv')
@@ -126,11 +150,11 @@ def gen_backlog(initial_order, total_requested_item, quantity_range, dev_mode):
         print("Total SKU ("+str(total_requested_item)+") is more than total items in the items.csv ("+str(total_available_item)+")")
         print("Please provide a total SKU that is equal to or less than the total items in the items.csv")
         return None
-    
+
 # ["order_id", 'order_dum', 'order_type', "item", "qty", "facing", "due_date", 'station', 'pod_id', 'status', 'finish_time', 'date', 'time_gen']
 
 def gen_order_arrival_time(order_cycle_time):
-    
+
     # Define the total number of orders and the time period in minutes
     total_orders = order_cycle_time     # number of orders in a cycle (hour)
     time_period = 60                    # 60 minutes in an hour
@@ -155,55 +179,15 @@ def gen_order_arrival_time(order_cycle_time):
 
     # # Print the arrival times
     # print(f"Order arrival times (in minutes): {arrival_times}")
-    
+
     return arrival_times
-
-
-# ── MMPP order generator ──────────────────────────────────────
-
-LOW_BASE  = np.array([0.22, 0.09, 0.20, 0.05, 0.44])
-HIGH_BASE = np.array([0.28, 0.12, 0.22, 0.04, 0.34])
-DIRICHLET_SCALE = 5.0
-
-
-def simulate_mmpp_states(total_hours,
-                         avg_duration_low=3.0,
-                         avg_duration_high=2.0,
-                         initial_state='low'):
-    """
-    Two-state MMPP following Lamballais et al. (2022).
-    Returns a list of states ('low'/'high') of length total_hours.
-    """
-    states = []
-    current_state = initial_state
-    hour = 0
-    while hour < total_hours:
-        if current_state == 'low':
-            duration = np.random.exponential(avg_duration_low)
-        else:
-            duration = np.random.exponential(avg_duration_high)
-        end_hour = min(hour + duration, total_hours)
-        while hour < end_hour:
-            states.append(current_state)
-            hour += 1
-        current_state = 'high' if current_state == 'low' else 'low'
-    return states[:total_hours]
-
-
-def get_class_config(state):
-    """
-    Draw cluster proportions from Dirichlet centered on state-specific base.
-    Called once per state period (not per order).
-    """
-    alphas = LOW_BASE * DIRICHLET_SCALE if state == 'low' else HIGH_BASE * DIRICHLET_SCALE
-    proportions = np.random.dirichlet(alphas)
-    return dict(zip([0, 1, 2, 3, 4], proportions))
 
 
 def gen_order(order_cycle_time,
               order_period_time,
               order_start_arrival_time,
               total_requested_item,
+              items_orders_class_configuration,
               quantity_range,
               date,
               dev_mode):
@@ -219,13 +203,27 @@ def gen_order(order_cycle_time,
         total_requested_item = total_available_item
 
     if total_available_item >= total_requested_item:
+        temp = 0
+        # calculate cummulative the class_pod_conf value, to get the threshold to assign the item to the pod.
+        for key, value in items_orders_class_configuration.items():
+            if temp == 0:
+                temp = value
+            else:
+                temp += value
+                items_orders_class_configuration[key] = np.round(temp, 1)
+
+        # sort the class_pod_conf based on the value
+        items_orders_class_configuration = dict(sorted(items_orders_class_configuration.items(), key=lambda x: x[1]))
+
+        # get class_pod_conf values into list as thresholds. The keys will be used to get the item based on the class
+        thresholds = list(items_orders_class_configuration.values())
+        keys = list(items_orders_class_configuration.keys())
+        # print(keys, thresholds)
 
         arrival_times_list = list()
         last_arrival_time  = 0
         for i in range(1, order_period_time+1):
-            hourly_rate = order_cycle_time
-
-            arrival_times = gen_order_arrival_time(order_cycle_time=hourly_rate)
+            arrival_times = gen_order_arrival_time(order_cycle_time=order_cycle_time)
             if i==1:
                 index_start_arrival_time = np.where(np.array(arrival_times) > order_start_arrival_time)[0][0]
 
@@ -239,62 +237,53 @@ def gen_order(order_cycle_time,
         orders = range(0, len(arrival_times_list))
         items_in_order = np.random.geometric(p=0.3, size=len(orders))
 
-        # MMPP: simulate states and draw one Dirichlet config per contiguous state period
-        cluster_ids = sorted(items["item_class"].unique())
-        hourly_states = simulate_mmpp_states(order_period_time)
-
-        state_configs = {}   # hour (0-indexed) → cluster proportion dict
-        current_mmpp_state = None
-        current_config = None
-        for h, state in enumerate(hourly_states):
-            if state != current_mmpp_state:
-                current_config = get_class_config(state)
-                current_mmpp_state = state
-            state_configs[h] = current_config
-
-        print(f"  MMPP states: {hourly_states.count('high')}h high, {hourly_states.count('low')}h low")
-
-        database_order = pd.DataFrame(columns=['order_dum', 
-                                               'order_type', 
-                                               "item", 
-                                               "qty", 
-                                               "facing", 
-                                               "due_date", 
-                                               'station', 
-                                               'pod_id', 
-                                               'status', 
-                                               'finish_time', 
-                                               'date', 
+        database_order = pd.DataFrame(columns=['order_dum',
+                                               'order_type',
+                                               "item",
+                                               "qty",
+                                               "facing",
+                                               "due_date",
+                                               'station',
+                                               'pod_id',
+                                               'status',
+                                               'finish_time',
+                                               'date',
                                                'time_gen'])
         for i, order in enumerate(orders):
             order_id = order
             order_type = 1
             order_duedate = 99999
-            
+
             items_num = items_in_order[i]
             # print(f"Order {order_id} has {items_num} items")
 
+            rand = np.random.rand(items_num)
             item_exist = list()
-            arrival_sec = arrival_times_list[i]
-            arrival_hour = min(int(arrival_sec / 3600), order_period_time - 1)
-            config = state_configs[arrival_hour]
+            # class_item = "A"
+            for r in rand:
+                if r <= thresholds[0]:
+                    # print(f"  below {thresholds[0]}, then the class is {keys[0]}")
+                    item_available = items.loc[(items["item_class"] == keys[0]) & (
+                        ~items.index.isin(item_exist)), "item_order_frequency"]
+                    class_item = keys[0]
 
-            for _ in range(items_num):
-                chosen_cluster = np.random.choice(
-                    list(config.keys()), p=list(config.values())
-                )
-                cluster_items = items[
-                    (items["item_class"] == chosen_cluster) &
-                    (~items.index.isin(item_exist))
-                ]
-                if len(cluster_items) == 0:
-                    break
-                item_id = np.random.choice(cluster_items.index.to_list())
-                qty = get_random_quantity(quantity_range=quantity_range)
-                item_exist.append(item_id)
+                for l in range(len(thresholds) - 1):
+                    if thresholds[l] < r <= thresholds[l + 1]:
+                        # print(f"  between {thresholds[l]} and {thresholds[l + 1]}, then the class is {keys[l+1]}")
+                        item_available = items.loc[(items["item_class"] == keys[l+1]) & (
+                            ~items.index.isin(item_exist)), "item_order_frequency"]
+                        class_item = keys[l+1]
 
-                database_order = pd.concat([database_order,
-                                            pd.DataFrame({"order_dum": [order_id],
+                item_probability = (item_available / item_available.sum()).to_list()
+                item_available = item_available.index.to_list()
+                if len(item_available) > 0:
+                    item_id = np.random.choice(item_available, p=item_probability)
+                    qty = get_random_quantity(quantity_range=quantity_range)
+                    item_exist.append(item_id)
+                    # print("    ", item_id, qty, class_item)
+
+                    database_order = pd.concat([database_order,
+                                                pd.DataFrame({"order_dum": [order_id],
                                                               "order_type": [order_type],
                                                               "item": [item_id],
                                                               "qty": [qty],
@@ -316,7 +305,7 @@ def gen_order(order_cycle_time,
 
         generated_order = database_order[["order_id", 'order_dum', 'order_type', "item", "qty", 'time_gen']].copy()
         generated_order.columns = ["sequence_id", 'order_id', 'order_type', "item_id", "item_quantity", 'order_arrival']
-        
+
         generated_order_path = os.path.join(parent_directory, 'generated_order.csv')
         generated_order.to_csv(generated_order_path, index=False)
 
@@ -327,44 +316,46 @@ def gen_order(order_cycle_time,
         print("Please provide a total SKU that is equal to or less than the total items in the items.csv")
         return None
 
-def config_orders(initial_order, total_requested_item, quantity_range, order_cycle_time, order_period_time, order_start_arrival_time, date, sim_ver, dev_mode):
+def config_orders(initial_order, total_requested_item, items_orders_class_configuration,quantity_range,order_cycle_time,order_period_time,order_start_arrival_time,date,sim_ver,dev_mode):
     if sim_ver == 1:
         print("Generate database orders...")
 
         database_order_path = os.path.join(parent_directory, 'generated_database_order.csv')
         if not os.path.exists(database_order_path):
             print("    Generated database orders is not found. We will generate database orders:")
-            orders = gen_order(order_cycle_time=order_cycle_time, order_period_time=order_period_time, order_start_arrival_time=order_start_arrival_time, total_requested_item=total_requested_item, quantity_range=quantity_range, date=date, dev_mode=dev_mode)
+            orders = gen_order(order_cycle_time=order_cycle_time,order_period_time=order_period_time,order_start_arrival_time=order_start_arrival_time,total_requested_item=total_requested_item, items_orders_class_configuration=items_orders_class_configuration,quantity_range=quantity_range,date=date,dev_mode=dev_mode)
             order_id_list = orders["order_dum"].unique().tolist()
             print("    "+str(len(order_id_list))+" orders are generated.")
         else:
-            print("    Generated database orders file is found. We will use the existing orders file.")    
-            print("    If you want to reconfigure the orders, please delete the generated_order.csv file.") 
+            print("    Generated database orders file is found. We will use the existing orders file.")
+            print("    If you want to reconfigure the orders, please delete the generated_order.csv file.")
 
     elif sim_ver == 2:
-        
+
         print("Generate backlog orders...")
         backlogs_path = os.path.join(parent_directory, 'generated_backlog.csv')
         backlog_generated = False
         if not os.path.exists(backlogs_path):
-            
+
             print("    Generated backlog orders is not found. We will generate backlog orders.")
             backlogs = gen_backlog(initial_order=initial_order, total_requested_item=total_requested_item,
+                                   items_orders_class_configuration=items_orders_class_configuration,
                                    quantity_range=quantity_range,
                                    dev_mode=dev_mode)
             backlog_generated = True
         else:
             backlogs = pd.read_csv(backlogs_path, index_col=False)
             backlogs_id_list = backlogs["order_id"].unique().tolist()
-            
+
             if initial_order == len(backlogs_id_list):
                 print("    Initial order is the same as the number of orders in the backlog file.")
                 print("    We will use the existing items file.")
-            
+
             else:
                 print("    Initial order is different from the number of orders in the backlog file.")
                 print("    We will re-generate backlog orders using the new intial order.")
                 backlogs = gen_backlog(initial_order=initial_order, total_requested_item=total_requested_item,
+                                       items_orders_class_configuration=items_orders_class_configuration,
                                        quantity_range=quantity_range,
                                        dev_mode=dev_mode)
                 backlog_generated = True
@@ -378,6 +369,7 @@ def config_orders(initial_order, total_requested_item, quantity_range, order_cyc
                                order_period_time=order_period_time,
                                order_start_arrival_time=order_start_arrival_time,
                                total_requested_item=total_requested_item,
+                               items_orders_class_configuration=items_orders_class_configuration,
                                quantity_range=quantity_range,
                                date=date,
                                dev_mode=dev_mode)
@@ -387,8 +379,8 @@ def config_orders(initial_order, total_requested_item, quantity_range, order_cyc
 
         else:
             print("    Generated orders file is found. We will use the existing orders file.")
-            print("    If you want to reconfigure the orders, please delete the generated_order.csv file.")  
-    
+            print("    If you want to reconfigure the orders, please delete the generated_order.csv file.")
+
         if backlog_generated:
             csv_files = ['generated_backlog.csv','generated_order.csv']
             dataframes = [pd.read_csv(file) for file in csv_files]

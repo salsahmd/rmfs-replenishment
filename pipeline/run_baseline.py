@@ -1,12 +1,13 @@
 """
-Baseline (no re-clustering) pipeline for RMFS warehouse simulation.
+Baseline pipeline for RMFS warehouse simulation (Rika's baseline).
 
 Usage:
-    python pipeline/run_baseline.py --total-hours 24 --k 5
+    python pipeline/run_baseline.py [--max-ticks 1000]
 
 Flow:
-    1. Initial k-means clustering on static features
-    2. Run simulation for the full duration (no mid-point split)
+    1. Run setup() to initialize warehouse, orders, pods, robots
+    2. Run tick() loop until simulation ends
+    3. Collect and save metrics
 """
 
 import argparse
@@ -16,24 +17,12 @@ import io
 import contextlib
 import time
 import pandas as pd
-import numpy as np
-from math import ceil, sqrt
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import MinMaxScaler
 
 # pipeline/ lives inside the project root
 PIPELINE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(PIPELINE_DIR)
 sys.path.insert(0, PIPELINE_DIR)
 sys.path.insert(0, PROJECT_ROOT)
-
-# Replenishment policy constants (from build_sku_dictionary.py)
-LEAD_TIME = 1.0
-SERVICE_LEVEL_Z = 1.2816  # 90% service level
-RANDOM_STATE = 42
-N_INIT = 20
-
-CLUSTER_FEATURES = ["mean_demand", "cv_demand", "demand_frequency", "avg_affinity", "max_affinity"]
 
 
 BAR_WIDTH = 40
@@ -70,85 +59,86 @@ def header(title):
     sys.stderr.flush()
 
 
-# ── clustering ───────────────────────────────────────────────
-
-def run_initial_clustering(sku_sample_path, k):
-    header("PHASE 0  Load Clusters from sku_sample.csv")
-    sku_df = pd.read_csv(sku_sample_path)
-    sku_df["item_code"] = sku_df["item_code"].astype(str)
-    sku_df["cluster"] = sku_df["cluster"].astype(int)
-
-    dist = sku_df["cluster"].value_counts().sort_index()
-    status(f"Loaded {len(sku_df)} SKUs with {sku_df['cluster'].nunique()} clusters: {dict(dist)}")
-    return sku_df
-
-
-
-
 # ── simulation runner ────────────────────────────────────────
 
-def run_phase(target_tick, phase_name):
+def run_simulation(max_ticks):
     """
-    Run tick() loop until universe._tick >= target_tick.
+    Run setup() then tick() loop.
 
     tick() returns: [positions, energy, job_queue_len, stop_and_go,
-                     turning, station_orders, orders_finished, _tick]
-    """
-    from netlogo import tick as sim_tick
+                     turning, station_orders]
 
-    header(f"{phase_name}  Simulating {target_tick:.0f}s")
+    Returns IndexError type when universe._tick > 1000 (simulation end).
+    """
+    from netlogo import setup as sim_setup, tick as sim_tick
+
+    header("SETUP  Initializing simulation")
+    status("Running setup()...")
+    with suppress_stdout():
+        sim_setup()
+    status("Setup complete.")
+
+    header(f"SIMULATION  Running (max {max_ticks} ticks)")
 
     tick_count = 0
-    current_tick = 0.0
     metrics_log = []
     t0 = time.time()
 
-    while current_tick < target_tick:
+    while tick_count < max_ticks:
         with suppress_stdout():
             result = sim_tick()
+
+        # tick() returns IndexError type when _tick > 1000
+        if result is IndexError:
+            status(f"Simulation ended at tick {tick_count} (tick limit reached)")
+            break
 
         if isinstance(result, str):
             sys.stderr.write(f"\n  ERROR: {result}\n")
             break
 
-        current_tick = result[-1]
         tick_count += 1
 
+        # result: [positions, energy, job_queue_len, stop_and_go, turning, station_orders]
         metrics_log.append({
-            "tick": current_tick,
+            "tick": tick_count,
             "total_energy": result[1],
             "job_queue_len": result[2],
             "stop_and_go": result[3],
             "total_turning": result[4],
-            "orders_finished": result[6],
         })
 
-        if tick_count % 50 == 0 or current_tick >= target_tick:
+        if tick_count % 50 == 0:
             elapsed = time.time() - t0
-            finished = result[6]
             progress_bar(
-                current_tick, target_tick,
-                prefix=phase_name,
-                suffix=f" {elapsed:.0f}s elapsed | {finished} orders done"
+                tick_count, max_ticks,
+                prefix="Baseline",
+                suffix=f" {elapsed:.0f}s elapsed | tick {tick_count}"
             )
 
     elapsed = time.time() - t0
-    last_finished = metrics_log[-1]["orders_finished"] if metrics_log else 0
-    progress_bar(target_tick, target_tick, prefix=phase_name,
-                 suffix=f" {elapsed:.0f}s elapsed | {last_finished} orders done")
+    progress_bar(tick_count, max_ticks, prefix="Baseline",
+                 suffix=f" {elapsed:.0f}s elapsed | {tick_count} ticks done")
     sys.stderr.write("\n")
 
     metrics_df = pd.DataFrame(metrics_log)
-    status(f"{phase_name} complete: {tick_count} ticks in {elapsed:.1f}s")
+    status(f"Simulation complete: {tick_count} ticks in {elapsed:.1f}s")
 
-    return {"final_tick": current_tick, "tick_count": tick_count, "metrics": metrics_df}
+    return {"tick_count": tick_count, "metrics": metrics_df}
 
 
 # ── results ──────────────────────────────────────────────────
 
-def compute_extra_metrics(orders_finished, generated_order_path, pod_info_path):
+def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_path):
     """Compute order throughput, replenishment/pick ratio, and pod utilization."""
     metrics = {}
+
+    # Orders finished
+    orders_finished = 0
+    if os.path.exists(order_finished_path):
+        finished_df = pd.read_csv(order_finished_path)
+        orders_finished = len(finished_df)
+    metrics["orders_finished"] = orders_finished
 
     # Order throughput = orders finished / orders generated
     orders_generated = 0
@@ -173,7 +163,6 @@ def compute_extra_metrics(orders_finished, generated_order_path, pod_info_path):
             total_picks = len(pick_df)
             total_replenishments = len(replen_df)
             total_units_picked = pick_df["qty"].sum() if "qty" in pick_df.columns else 0
-            # Pod visit = unique (pod_id, processed_time) for pick tasks
             if not pick_df.empty and "pod_id" in pick_df.columns and "processed_time" in pick_df.columns:
                 pod_visits = pick_df.groupby(["pod_id", "processed_time"]).ngroups
 
@@ -191,7 +180,7 @@ def compute_extra_metrics(orders_finished, generated_order_path, pod_info_path):
     return metrics
 
 
-def save_results(run_data, orders_df, args, results_dir, extra=None):
+def save_results(run_data, args, results_dir, extra):
     header("RESULTS")
 
     m = run_data["metrics"]
@@ -199,48 +188,47 @@ def save_results(run_data, orders_df, args, results_dir, extra=None):
         m["phase"] = "baseline"
         m.to_csv(os.path.join(results_dir, "tick_metrics.csv"), index=False)
 
-        sys.stderr.write(f"\n  Baseline ({args.total_hours}h, k={args.k})\n")
-        sys.stderr.write(f"    Orders finished:   {m['orders_finished'].iloc[-1]}\n")
+        sys.stderr.write(f"\n  Baseline (max_ticks={args.max_ticks})\n")
+        sys.stderr.write(f"    Orders finished:   {extra['orders_finished']}\n")
         sys.stderr.write(f"    Total energy:      {m['total_energy'].iloc[-1]:.2f}\n")
         sys.stderr.write(f"    Stop & go:         {m['stop_and_go'].iloc[-1]}\n")
         sys.stderr.write(f"    Total turning:     {m['total_turning'].iloc[-1]}\n")
         sys.stderr.write(f"    Peak job queue:    {m['job_queue_len'].max()}\n")
         sys.stderr.write(f"    Avg job queue:     {m['job_queue_len'].mean():.1f}\n")
 
-    if orders_df is not None and not orders_df.empty:
+    # Order cycle time from order-finished.csv
+    order_finished_path = os.path.join("output", "order-finished.csv")
+    if os.path.exists(order_finished_path):
+        orders_df = pd.read_csv(order_finished_path)
+        orders_df.to_csv(os.path.join(results_dir, "orders.csv"), index=False)
         if "order_complete_time" in orders_df.columns and "process_start_time" in orders_df.columns:
-            orders_df = orders_df.copy()
             orders_df["cycle_time"] = orders_df["order_complete_time"] - orders_df["process_start_time"]
             sys.stderr.write(f"    Avg cycle time:    {orders_df['cycle_time'].mean():.1f}s\n")
             sys.stderr.write(f"    Max cycle time:    {orders_df['cycle_time'].max():.1f}s\n")
 
-    if extra:
-        sys.stderr.write(f"    Order throughput:  {extra['order_throughput']:.4f} ({extra['orders_generated']} generated)\n")
-        sys.stderr.write(f"    Replen/pick ratio: {extra['replenishment_pick_ratio']:.4f} ({extra['total_replenishments']}R / {extra['total_picks']}P)\n")
-        sys.stderr.write(f"    Pod utilization:   {extra['pod_utilization']:.4f} ({extra['total_units_picked']} units / {extra['pod_visits']} visits)\n")
+    sys.stderr.write(f"    Order throughput:  {extra['order_throughput']:.4f} ({extra['orders_generated']} generated)\n")
+    sys.stderr.write(f"    Replen/pick ratio: {extra['replenishment_pick_ratio']:.4f} ({extra['total_replenishments']}R / {extra['total_picks']}P)\n")
+    sys.stderr.write(f"    Pod utilization:   {extra['pod_utilization']:.4f} ({extra['total_units_picked']} units / {extra['pod_visits']} visits)\n")
 
     summary = {
-        "total_hours": args.total_hours,
-        "k_clusters": args.k,
+        "max_ticks": args.max_ticks,
         "pipeline": "baseline",
         "ticks": run_data["tick_count"],
-        "orders_finished": m["orders_finished"].iloc[-1] if not m.empty else 0,
+        "orders_finished": extra["orders_finished"],
         "total_energy": m["total_energy"].iloc[-1] if not m.empty else 0,
         "stop_and_go": m["stop_and_go"].iloc[-1] if not m.empty else 0,
         "total_turning": m["total_turning"].iloc[-1] if not m.empty else 0,
         "peak_job_queue": m["job_queue_len"].max() if not m.empty else 0,
         "avg_job_queue": round(m["job_queue_len"].mean(), 1) if not m.empty else 0,
+        "orders_generated": extra["orders_generated"],
+        "order_throughput": round(extra["order_throughput"], 4),
+        "total_picks": extra["total_picks"],
+        "total_replenishments": extra["total_replenishments"],
+        "replenishment_pick_ratio": round(extra["replenishment_pick_ratio"], 4),
+        "total_units_picked": extra["total_units_picked"],
+        "pod_visits": extra["pod_visits"],
+        "pod_utilization": round(extra["pod_utilization"], 4),
     }
-
-    if extra:
-        summary["orders_generated"] = extra["orders_generated"]
-        summary["order_throughput"] = round(extra["order_throughput"], 4)
-        summary["total_picks"] = extra["total_picks"]
-        summary["total_replenishments"] = extra["total_replenishments"]
-        summary["replenishment_pick_ratio"] = round(extra["replenishment_pick_ratio"], 4)
-        summary["total_units_picked"] = extra["total_units_picked"]
-        summary["pod_visits"] = extra["pod_visits"]
-        summary["pod_utilization"] = round(extra["pod_utilization"], 4)
 
     summary_path = os.path.join(results_dir, "summary.csv")
     pd.DataFrame([summary]).to_csv(summary_path, index=False)
@@ -255,61 +243,34 @@ def save_results(run_data, orders_df, args, results_dir, extra=None):
 # ── main ─────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="RMFS baseline pipeline (no re-clustering)")
-    parser.add_argument("--total-hours", type=float, default=24.0,
-                        help="Total simulation duration in hours (default: 24)")
-    parser.add_argument("--k", type=int, default=5,
-                        help="Number of k-means clusters (default: 5)")
+    parser = argparse.ArgumentParser(description="RMFS baseline pipeline (Rika's baseline)")
+    parser.add_argument("--max-ticks", type=int, default=10000,
+                        help="Maximum number of simulation ticks (default: 10000)")
     args = parser.parse_args()
 
-    total_seconds = args.total_hours * 3600
-
-    sys.stderr.write(f"\n  RMFS Baseline Pipeline: {args.total_hours}h, K={args.k}\n")
-    sys.stderr.write(f"  Single run — no mid-point re-clustering\n")
+    sys.stderr.write(f"\n  RMFS Baseline Pipeline (Rika's baseline)\n")
+    sys.stderr.write(f"  Max ticks: {args.max_ticks}\n")
 
     netlogo_dir = os.path.join(PROJECT_ROOT, "netlogo")
-    sku_sample_path = os.path.join(PROJECT_ROOT, "sku_sample.csv")
-    sku_sample_rel = os.path.relpath(sku_sample_path, netlogo_dir)
 
-    # ── Phase 0: Initial Clustering ──
-    run_initial_clustering(sku_sample_path, args.k)
-
-    # ── Setup: Generate orders and initialize ──
+    # Switch to netlogo/ directory (simulation expects files in cwd)
     os.chdir(netlogo_dir)
     sys.path.insert(0, netlogo_dir)
 
-    from netlogo import reload_data_for_phase
+    # Run simulation
+    run_data = run_simulation(args.max_ticks)
 
-    total_order_hours = max(1, int(np.ceil(args.total_hours)))
-    backlog_order_hours = total_order_hours + 1
+    # Compute extra metrics
+    order_finished_path = os.path.join("output", "order-finished.csv")
+    extra = compute_extra_metrics("generated_order.csv", "pod_info.csv", order_finished_path)
 
-    status(f"Generating orders for {total_order_hours}h and initializing simulation...")
-    with suppress_stdout():
-        reload_data_for_phase(
-            sku_sample_path=sku_sample_rel,
-            order_period_hours=total_order_hours,
-            backlog_period_hours=backlog_order_hours,
-        )
-    status("Simulation initialized.")
-
-    # ── Run: Full duration ──
-    run_data = run_phase(total_seconds, "Baseline")
-
-    # ── Save results ──
+    # Save results
     results_dir = os.path.join(PROJECT_ROOT, "results_baseline")
     os.makedirs(results_dir, exist_ok=True)
 
-    order_finished = None
-    if os.path.exists("order-finished.csv"):
-        order_finished = pd.read_csv("order-finished.csv")
-        order_finished.to_csv(os.path.join(results_dir, "orders.csv"), index=False)
-
-    # Compute extra metrics
-    finished_count = int(run_data["metrics"]["orders_finished"].iloc[-1]) if not run_data["metrics"].empty else 0
-    extra = compute_extra_metrics(finished_count, "generated_order.csv", "pod_info.csv")
+    save_results(run_data, args, results_dir, extra)
 
     os.chdir(PROJECT_ROOT)
-    save_results(run_data, order_finished, args, results_dir, extra=extra)
 
 
 if __name__ == "__main__":
