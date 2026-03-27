@@ -60,8 +60,8 @@ LEAD_TIME       = 1.0      # days
 SERVICE_LEVEL_Z = 1.2816   # 90 % service level
 
 # Cluster priority: index 0 = highest priority
-# Class 4 = high-demand (ABC/XYZ A-class), assigned first and dispersed
-CLUSTER_PRIORITY = [4, 1, 3, 0, 2]
+# Cluster 3 = high-demand, assigned first and dispersed
+CLUSTER_PRIORITY = [3, 1, 0, 2]
 
 # Pod slot structure (Table 3.6, line 2 of paper)
 # Each new pod is created with exactly these slot_types in this order.
