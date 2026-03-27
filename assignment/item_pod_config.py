@@ -7,11 +7,13 @@ from math import ceil
 # =============================================================================
 # I/O PATHS
 # =============================================================================
-POD_SIZE_PATH   = Path("pod_size.csv")          # slot_type, slot_length/width/height, slots_per_pod
-ITEMS_DICT_PATH = Path("items_dictionary_cleaned.csv")
+BASE = Path(__file__).parent
 
-OUT_ALL_CONFIG  = Path("items_slots_configuration.csv")
-OUT_BEST_CONFIG = Path("best_config_per_sku.csv")
+POD_SIZE_PATH   = BASE / "../pod_size.csv"       # slot_type, slot_length/width/height, slots_per_pod
+ITEMS_DICT_PATH = BASE / "../sku_sample.csv"
+
+OUT_ALL_CONFIG  = BASE / "items_slots_configuration.csv"
+OUT_BEST_CONFIG = BASE / "best_config_per_sku.csv"
 
 
 # =============================================================================

@@ -99,7 +99,7 @@ affinity_dir = Path("clustering")
 A_mat = load_npz(str(affinity_dir / "affinity_sparse.npz"))
 sku_index = pd.read_csv(affinity_dir / "affinity_sku_index.csv")
 sku_to_idx = {str(s): i for i, s in enumerate(sku_index["item_code"])}
-
+4
 def get_max_affinity(sku):
     idx = sku_to_idx.get(str(sku))
     if idx is None:
@@ -115,7 +115,33 @@ top_1000["max_affinity"] = top_1000["item_code"].apply(get_max_affinity)
 final_df = pd.merge(top_1000, items_df, on='item_code', how='left')
 
 # =========================
-# 8. SAVE
+# 9. INITIAL INVENTORY
+# =========================
+# parse number_of_item_in_a_box (may have double-period format e.g. '24.00.00')
+def parse_double_period(val):
+    s = str(val).strip()
+    if s.count('.') == 2:
+        s = s.rsplit('.', 1)[0]  # strip trailing '.00'
+    try:
+        return float(s)
+    except ValueError:
+        return float('nan')
+
+final_df['number_of_item_in_a_box'] = final_df['number_of_item_in_a_box'].apply(parse_double_period)
+
+Z = 1.28   # 90% service level
+LT = 1     # lead time in days
+
+final_df['initial_unit_inventory'] = (
+    final_df['mean_demand'] * LT + final_df['std_demand'] * Z * LT
+).round(2)
+
+final_df['initial_box_inventory'] = (
+    final_df['initial_unit_inventory'] / final_df['number_of_item_in_a_box']
+).round(2)
+
+# =========================
+# 10. SAVE
 # =========================
 final_df.to_csv(sku_file, index=False)
 

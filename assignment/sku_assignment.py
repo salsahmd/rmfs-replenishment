@@ -73,14 +73,16 @@ CONSTRAINED_THRESHOLD = 2
 # =============================================================================
 # I/O PATHS
 # =============================================================================
-ITEMS_SLOTS_CONFIG  = Path("items_slots_configuration.csv")
-SKU_SAMPLE_FILE     = Path("sku_sample.csv")                # sampled SKUs (primary source)
-ITEMS_DICT_FILE     = Path("items_dictionary_cleaned.csv")  # item_initial_quantity_inventory
+BASE = Path(__file__).parent
 
-OUT_DETAIL          = Path("sku_assignment_detail.csv")
-OUT_SKU_ASSIGNMENT  = Path("sku_assignment.csv")
-OUT_POD_SUMMARY     = Path("pod_summary.csv")
-OUT_UNASSIGNED      = Path("unassigned_skus.csv")
+ITEMS_SLOTS_CONFIG  = BASE / "items_slots_configuration.csv"
+SKU_SAMPLE_FILE     = BASE / "../sku_sample.csv"
+ITEMS_DICT_FILE     = BASE / "../items_dictionary_cleaned.csv"
+
+OUT_DETAIL          = BASE / "sku_assignment_detail.csv"
+OUT_SKU_ASSIGNMENT  = BASE / "sku_assignment.csv"
+OUT_POD_SUMMARY     = BASE / "pod_summary.csv"
+OUT_UNASSIGNED      = BASE / "unassigned_skus.csv"
 
 
 # =============================================================================
@@ -215,6 +217,10 @@ def load_sku_sample(path: Path) -> pd.DataFrame:
         df["std_demand"] = df.get("cv_demand", 0.0) * df["mean_demand"]
     df["box_weight"]   = pd.to_numeric(df["box_weight"],               errors="coerce").fillna(0.0)
     df["units_per_box"] = pd.to_numeric(df["number_of_item_in_a_box"], errors="coerce").fillna(1.0).clip(lower=1.0)
+    if "initial_box_inventory" in df.columns:
+        df["initial_inventory_boxes"] = pd.to_numeric(df["initial_box_inventory"], errors="coerce").fillna(0).clip(lower=0).astype(int)
+    else:
+        df["initial_inventory_boxes"] = 0
     return df
 
 
@@ -660,10 +666,10 @@ def run_assignment(base_dir=None, sku_sample_path=None,
     detail_df : pd.DataFrame
         The sku_assignment_detail table (one row per pod/slot assignment).
     """
-    base = Path(base_dir) if base_dir else Path.cwd()
-    sku_sample_p = Path(sku_sample_path) if sku_sample_path else base / "sku_sample.csv"
-    items_dict_p = Path(items_dict_path) if items_dict_path else base / "items_dictionary_cleaned.csv"
-    items_slots_p = Path(items_slots_config_path) if items_slots_config_path else base / "items_slots_configuration.csv"
+    base = Path(base_dir) if base_dir else BASE
+    sku_sample_p = Path(sku_sample_path) if sku_sample_path else BASE / "../sku_sample.csv"
+    items_dict_p = Path(items_dict_path) if items_dict_path else BASE / "../items_dictionary_cleaned.csv"
+    items_slots_p = Path(items_slots_config_path) if items_slots_config_path else BASE / "items_slots_configuration.csv"
 
     _t0 = time.perf_counter()
     print("=" * 62)
@@ -679,11 +685,9 @@ def run_assignment(base_dir=None, sku_sample_path=None,
 
     config_df = config_df[config_df["item_code"].isin(sample_codes)].copy()
 
-    sku_dict_p = base / "sku_dictionary.csv"
-    sku_dict_df = load_sku_dict(sku_dict_p)
-    items_dict_df = sku_dict_df[["item_code", "initial_inventory_boxes"]].copy()
+    items_dict_df = cluster_df[["item_code", "initial_inventory_boxes"]].copy()
     items_dict_df = items_dict_df[items_dict_df["item_code"].isin(sample_codes)].copy()
-    items_dict_df["qty_inv_items"] = 0  # not available from sku_dictionary
+    items_dict_df["qty_inv_items"] = 0
     total_boxes = items_dict_df["initial_inventory_boxes"].sum()
     print(f"  Total initial inventory: {total_boxes:,} boxes")
 
