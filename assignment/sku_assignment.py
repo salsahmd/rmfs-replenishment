@@ -387,13 +387,11 @@ def assign_item(item_code: str, cluster: int, remaining_boxes: int,
                     if cfg is None:
                         continue
 
-                    assign_boxes = min(remaining_boxes, cfg["max_boxes_in_slot"])
+                    assign_boxes = cfg["max_boxes_in_slot"]
                     if assign_boxes <= 0:
                         continue
 
                     added_weight = assign_boxes * box_weight
-                    if pod["total_weight"] + added_weight > MAX_POD_WEIGHT:
-                        continue
 
                     chosen_pod    = pod
                     chosen_slot   = slot
@@ -421,12 +419,10 @@ def assign_item(item_code: str, cluster: int, remaining_boxes: int,
                     cfg = lookup.get((item_code, st))
                     if cfg is None:
                         continue
-                    assign_boxes = min(remaining_boxes, cfg["max_boxes_in_slot"])
+                    assign_boxes = cfg["max_boxes_in_slot"]
                     if assign_boxes <= 0:
                         continue
                     added_weight = assign_boxes * box_weight
-                    if new_pod["total_weight"] + added_weight > MAX_POD_WEIGHT:
-                        continue
 
                     chosen_pod    = new_pod
                     chosen_slot   = slot
@@ -535,17 +531,9 @@ def secondary_fill(pods: list, items_df: pd.DataFrame,
             chosen = None
             for rank, neg_vu, item_code, info, cfg in candidates:
                 assign_boxes = cfg["max_boxes_in_slot"]   # fill slot completely
-                assign_boxes = min(assign_boxes, int(info["initial_inventory_boxes"]) or assign_boxes)
                 assign_boxes = max(assign_boxes, 1)
 
                 added_weight = assign_boxes * float(info["box_weight"])
-                if pod["total_weight"] + added_weight > MAX_POD_WEIGHT:
-                    # Try with fewer boxes
-                    max_by_weight = int((MAX_POD_WEIGHT - pod["total_weight"]) / max(float(info["box_weight"]), 0.001))
-                    if max_by_weight <= 0:
-                        continue
-                    assign_boxes = min(assign_boxes, max_by_weight)
-                    added_weight = assign_boxes * float(info["box_weight"])
 
                 chosen = (item_code, info, cfg, assign_boxes, added_weight)
                 break
