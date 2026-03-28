@@ -1,4 +1,5 @@
 from pathlib import Path
+import numpy as np
 import pandas as pd
 from scipy.sparse import load_npz
 
@@ -84,38 +85,7 @@ for sku, group in daily_demand.groupby('item_code'):
 feature_df = pd.DataFrame(features)
 
 # =========================
-# 6. SELECT TOP 1000 BY MEAN DEMAND
-# =========================
-top_1000 = feature_df.sort_values(
-    by='mean_demand', ascending=False
-).head(1000)
-
-# =========================
-# 7. ADD MAX AFFINITY
-# =========================
-top_1000['item_code'] = top_1000['item_code'].astype(str)
-
-affinity_dir = Path("clustering")
-A_mat = load_npz(str(affinity_dir / "affinity_sparse.npz"))
-sku_index = pd.read_csv(affinity_dir / "affinity_sku_index.csv")
-sku_to_idx = {str(s): i for i, s in enumerate(sku_index["item_code"])}
-4
-def get_max_affinity(sku):
-    idx = sku_to_idx.get(str(sku))
-    if idx is None:
-        return 0.0
-    row = A_mat.getrow(idx)
-    return float(row.max()) if row.nnz > 0 else 0.0
-
-top_1000["max_affinity"] = top_1000["item_code"].apply(get_max_affinity)
-
-# =========================
-# 8. MERGE WITH ITEMS DICTIONARY
-# =========================
-final_df = pd.merge(top_1000, items_df, on='item_code', how='left')
-
-# =========================
-# 9. INITIAL INVENTORY
+# 6. STRATIFIED SAMPLING BY IMPACT SCORE
 # =========================
 # parse number_of_item_in_a_box (may have double-period format e.g. '24.00.00')
 def parse_double_period(val):
@@ -127,22 +97,75 @@ def parse_double_period(val):
     except ValueError:
         return float('nan')
 
-final_df['number_of_item_in_a_box'] = final_df['number_of_item_in_a_box'].apply(parse_double_period)
+# Merge all SKUs with items_df to get number_of_item_in_a_box
+feature_df['item_code'] = feature_df['item_code'].astype(str)
+merged_all = pd.merge(feature_df, items_df, on='item_code', how='inner')
+merged_all['number_of_item_in_a_box'] = merged_all['number_of_item_in_a_box'].apply(parse_double_period)
 
+# Compute initial inventory for all SKUs
 Z = 1.28   # 90% service level
 LT = 1     # lead time in days
-
-final_df['initial_unit_inventory'] = (
-    final_df['mean_demand'] * LT + final_df['std_demand'] * Z * LT
+merged_all['initial_unit_inventory'] = (
+    merged_all['mean_demand'] * 4
 ).round(2)
+merged_all['initial_box_inventory'] = np.ceil(
+    merged_all['initial_unit_inventory'] / merged_all['number_of_item_in_a_box']
+).astype(int)
 
-final_df['initial_box_inventory'] = (
-    final_df['initial_unit_inventory'] / final_df['number_of_item_in_a_box']
-).round(2)
+# Impact score: min-max normalize 4 features, then take mean
+impact_features = ['mean_demand', 'initial_box_inventory', 'cv_demand', 'demand_frequency']
+for feat in impact_features:
+    col_min = merged_all[feat].min()
+    col_max = merged_all[feat].max()
+    denom = col_max - col_min if col_max != col_min else 1
+    merged_all[f'{feat}_norm'] = (merged_all[feat] - col_min) / denom
+
+merged_all['impact_score'] = merged_all[[f'{feat}_norm' for feat in impact_features]].mean(axis=1)
+
+# Assign quartile and stratified sample
+merged_all['quartile'] = pd.qcut(merged_all['impact_score'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+strata_n = {'Q1': 50, 'Q2': 100, 'Q3': 200, 'Q4': 650}
+
+sampled_parts = []
+for q, n in strata_n.items():
+    stratum = merged_all[merged_all['quartile'] == q]
+    take = min(n, len(stratum))
+    sampled_parts.append(stratum.sample(n=take, random_state=42))
+
+top_1000 = pd.concat(sampled_parts).reset_index(drop=True)
 
 # =========================
-# 10. SAVE
+# 7. ADD MAX AFFINITY
+# =========================
+top_1000['item_code'] = top_1000['item_code'].astype(str)
+
+affinity_dir = Path("clustering")
+A_mat = load_npz(str(affinity_dir / "affinity_sparse.npz"))
+sku_index = pd.read_csv(affinity_dir / "affinity_sku_index.csv")
+sku_to_idx = {str(s): i for i, s in enumerate(sku_index["item_code"])}
+
+def get_max_affinity(sku):
+    idx = sku_to_idx.get(str(sku))
+    if idx is None:
+        return 0.0
+    row = A_mat.getrow(idx)
+    return float(row.max()) if row.nnz > 0 else 0.0
+
+top_1000["max_affinity"] = top_1000["item_code"].apply(get_max_affinity)
+
+# =========================
+# 8. FINALIZE
+# =========================
+final_df = top_1000.copy()
+
+# Drop temporary columns used for sampling
+temp_cols = [f'{feat}_norm' for feat in impact_features] + ['quartile', 'impact_score']
+final_df = final_df.drop(columns=[c for c in temp_cols if c in final_df.columns])
+
+# =========================
+# 9. SAVE
 # =========================
 final_df.to_csv(sku_file, index=False)
 
-print("✅ sku_sample.csv updated with new demand features (columns preserved!)")
+print("✅ sku_sample.csv updated with stratified sampling by impact score (1000 SKUs)")
+print(f"   Strata: Q1=50, Q2=100, Q3=200, Q4=650")

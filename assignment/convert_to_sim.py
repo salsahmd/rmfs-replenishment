@@ -36,16 +36,16 @@ def generate_items_csv(sku_sample_path, items_dict_path, output_path,
     sku_df = normalize_cols(read_csv_auto_sep(Path(sku_sample_path)))
     sku_df["item_code"] = sku_df["item_code"].astype(str)
 
-    # Load items_dictionary_cleaned (has item_initial_quantity_inventory, item_order_frequency, etc.)
-    idict = normalize_cols(read_csv_auto_sep(Path(items_dict_path)))
-    idict["item_code"] = idict["item_code"].astype(str)
-
-    # Merge — sku_sample is the authority on which SKUs are included
-    merged = sku_df.merge(
-        idict[["item_code", "item_order_frequency", "item_initial_quantity_inventory",
-               "item_volume", "item_unit", "item_quantity_order_unique"]],
-        on="item_code", how="left",
-    )
+    # Only merge items_dict if sku_sample is missing columns we need
+    extra_cols = ["item_order_frequency", "item_initial_quantity_inventory",
+                  "item_volume", "item_unit", "item_quantity_order_unique"]
+    missing_cols = [c for c in extra_cols if c not in sku_df.columns]
+    if missing_cols and items_dict_path is not None:
+        idict = normalize_cols(read_csv_auto_sep(Path(items_dict_path)))
+        idict["item_code"] = idict["item_code"].astype(str)
+        merged = sku_df.merge(idict[["item_code"] + missing_cols], on="item_code", how="left")
+    else:
+        merged = sku_df.copy()
 
     # Sort by item_code for deterministic item_id
     merged = merged.sort_values("item_code").reset_index(drop=True)
@@ -64,11 +64,13 @@ def generate_items_csv(sku_sample_path, items_dict_path, output_path,
 
     # Fill missing values
     for col in ["item_order_frequency", "item_initial_quantity_inventory"]:
-        merged[col] = pd.to_numeric(merged.get(col, 0), errors="coerce").fillna(0).astype(int)
+        src = merged[col] if col in merged.columns else pd.Series(0, index=merged.index)
+        merged[col] = pd.to_numeric(src, errors="coerce").fillna(0).astype(int)
     for col in ["box_length", "box_width", "box_height", "box_volume", "item_volume", "cv_demand"]:
-        merged[col] = pd.to_numeric(merged.get(col, 0), errors="coerce").fillna(0.0)
-    merged["item_unit"] = merged.get("item_unit", "PCS").fillna("PCS")
-    merged["item_quantity_order_unique"] = merged.get("item_quantity_order_unique", "[]").fillna("[]")
+        src = merged[col] if col in merged.columns else pd.Series(0.0, index=merged.index)
+        merged[col] = pd.to_numeric(src, errors="coerce").fillna(0.0)
+    merged["item_unit"] = (merged["item_unit"] if "item_unit" in merged.columns else pd.Series("PCS", index=merged.index)).fillna("PCS")
+    merged["item_quantity_order_unique"] = (merged["item_quantity_order_unique"] if "item_quantity_order_unique" in merged.columns else pd.Series("[]", index=merged.index)).fillna("[]")
 
     # Use cluster as item_class (matches how the pipeline updates items_dictionary)
     merged["item_class"] = merged[cluster_col].astype(int)
@@ -101,73 +103,55 @@ def convert_detail_to_pods_csv(detail_df, items_df, output_path,
         print("  WARNING: detail_df is empty — no pods to write")
         return pd.DataFrame()
 
-    # Build item_code → item_id mapping from items_df
-    code_to_id = {}
-    for item_id, row in items_df.iterrows():
-        code_to_id[str(row["item_code"])] = item_id
-
-    # Build item_code → inventory levels from items_df
-    code_to_pod_inv = {}
-    code_to_wh_inv = {}
-    for _, row in items_df.iterrows():
-        ic = str(row["item_code"])
-        code_to_pod_inv[ic] = float(row["item_pod_inventory_level"])
-        code_to_wh_inv[ic] = float(row["item_warehouse_inventory_level"])
-
-    # Build item_code → item_weight from items_df
-    code_to_weight = {}
-    for _, row in items_df.iterrows():
-        code_to_weight[str(row["item_code"])] = float(row["item_weight"])
-
     # Load pods_dictionary for slot structure reference
     if pods_dict_path and os.path.exists(pods_dict_path):
         pods_dict = pd.read_csv(pods_dict_path)
-        # Get facing from pods_dictionary (typically all 0 for pod_type 0)
         default_facing = int(pods_dict["pod_face"].iloc[0]) if "pod_face" in pods_dict.columns else 0
     else:
         default_facing = 0
 
-    rows = []
-    slot_seq = 0
-    for _, d in detail_df.iterrows():
-        item_code = str(d["item_code"])
-        item_id = code_to_id.get(item_code)
-        if item_id is None:
-            continue
+    # Build lookup table from items_df (index = item_id)
+    lookup = items_df[["item_code", "item_weight",
+                        "item_pod_inventory_level",
+                        "item_warehouse_inventory_level"]].copy()
+    lookup["item_code"] = lookup["item_code"].astype(str)
+    lookup["item_id"] = lookup.index  # preserve original index as item_id
 
-        item_weight = code_to_weight.get(item_code, 0.0)
-        qty = int(d["qty_items_assigned"])
-        total_weight = round(item_weight * qty, 3)
+    # Normalise detail item_code to string for join
+    df = detail_df.copy()
+    df["item_code"] = df["item_code"].astype(str)
 
-        rows.append({
-            "pod_id": int(d["pod_id"]),
-            "pod_type": 0,
-            "slot_id": int(d["slot_idx"]),
-            "slot_type": int(d["slot_type"]),
-            "item": item_id,
-            "unusedColumn1": 0,
-            "unusedColumn2": 0,
-            "unusedColumn3": 0,
-            "qty": qty,
-            "max_qty": qty,
-            "due_date": 99999,
-            "facing": default_facing,
-            "pick_ind": 0,
-            "slot_sequence": slot_seq,
-            "item_weight": item_weight,
-            "total_item_weight": total_weight,
-            "item_pod_inventory_level": code_to_pod_inv.get(item_code, 0.5),
-            "item_warehouse_inventory_level": code_to_wh_inv.get(item_code, 0.5),
-        })
-        slot_seq += 1
+    # Merge — drops rows with no matching item_id (infeasible SKUs)
+    pods_df = df.merge(lookup, on="item_code", how="inner")
 
-    pods_df = pd.DataFrame(rows)
+    if pods_df.empty:
+        print("  WARNING: no rows matched between detail_df and items_df — pods.csv will be empty")
+        pods_df.to_csv(output_path, index=False)
+        return pods_df
 
-    # Ensure integer types for columns that must be int
-    for col in ["pod_id", "pod_type", "slot_id", "slot_type", "item",
+    pods_df["total_item_weight"] = (pods_df["item_weight"] *
+                                    pd.to_numeric(pods_df["qty_items_assigned"], errors="coerce").fillna(0)).round(3)
+    pods_df["slot_sequence"] = range(len(pods_df))
+    pods_df["pod_type"] = 0
+    pods_df["unusedColumn1"] = 0
+    pods_df["unusedColumn2"] = 0
+    pods_df["unusedColumn3"] = 0
+    pods_df["due_date"] = 99999
+    pods_df["facing"] = default_facing
+    pods_df["pick_ind"] = 0
+
+    pods_df = pods_df.rename(columns={
+        "slot_idx": "slot_id",
+        "qty_items_assigned": "qty",
+        "item_id": "item",
+    })
+    pods_df["max_qty"] = pods_df["qty"]
+
+    int_cols = ["pod_id", "pod_type", "slot_id", "slot_type", "item",
                 "unusedColumn1", "unusedColumn2", "unusedColumn3",
-                "qty", "max_qty", "due_date", "facing", "pick_ind", "slot_sequence"]:
-        pods_df[col] = pods_df[col].astype(int)
+                "qty", "max_qty", "due_date", "facing", "pick_ind", "slot_sequence"]
+    for col in int_cols:
+        pods_df[col] = pd.to_numeric(pods_df[col], errors="coerce").fillna(0).astype(int)
 
     pods_df.to_csv(output_path, index=False)
     n_pods = pods_df["pod_id"].nunique()
