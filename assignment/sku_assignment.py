@@ -243,6 +243,8 @@ def build_item_table(cluster_df: pd.DataFrame, config_df: pd.DataFrame,
     df["units_per_box"] = df["units_per_box"].fillna(1.0).clip(lower=1.0)
 
     # Step 2: actual initial inventory from items_dictionary_cleaned
+    if "initial_inventory_boxes" in df.columns:
+        df = df.drop(columns=["initial_inventory_boxes"])
     df = df.merge(
         items_dict_df[["item_code", "qty_inv_items", "initial_inventory_boxes"]],
         on="item_code", how="left"
