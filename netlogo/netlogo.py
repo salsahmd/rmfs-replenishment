@@ -260,8 +260,8 @@ def draw_layout_from_generated_file(universe: Inventory):
     assign_skus_to_pods(universe.pod_manager)
     config_orders(
         initial_order=20,
-        total_requested_item=500,  # Number of SKU in warehouse
-        items_orders_class_configuration={"A": 0.6, "B": 0.3, "C": 0.1},  # Item class configuration in warehouse
+        total_requested_item=789,  # Number of SKU in warehouse (configured SKUs from best_config_per_sku.csv)
+        items_orders_class_configuration={3: 0.40, 1: 0.35, 2: 0.22, 0: 0.03},  # Item class configuration in warehouse (cluster-based)
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
         order_period_time=2,  # the total hours
@@ -272,8 +272,8 @@ def draw_layout_from_generated_file(universe: Inventory):
     # Config Backlog Orders
     config_orders(
         initial_order=50,  # Initial order in backlog
-        total_requested_item=500,  # Number of SKU in warehouse
-        items_orders_class_configuration={"A": 0.6, "B": 0.3, "C": 0.1},  # Item class configuration in warehouse
+        total_requested_item=789,  # Number of SKU in warehouse (configured SKUs from best_config_per_sku.csv)
+        items_orders_class_configuration={3: 0.40, 1: 0.35, 2: 0.22, 0: 0.03},  # Item class configuration in warehouse (cluster-based)
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
         order_period_time=3,

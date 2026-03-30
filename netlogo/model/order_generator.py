@@ -56,17 +56,22 @@ def get_random_quantity(quantity_range=[1, 12]):
 
 def gen_backlog(initial_order, total_requested_item, items_orders_class_configuration,quantity_range,dev_mode):
 
-    items_path = os.path.join(parent_directory, 'items.csv')
+    root_directory = os.path.dirname(parent_directory)
+    items_path = os.path.join(root_directory, 'sku_sample.csv')
     orders_path = os.path.join(parent_directory, 'generated_order.csv')
     items = pd.read_csv(items_path, index_col=False)
+    items['item_order_frequency'] = pd.to_numeric(items['item_order_frequency'], errors='coerce').fillna(0)
+    configured_path = os.path.join(root_directory, 'best_config_per_sku.csv')
+    configured_codes = pd.read_csv(configured_path, usecols=['item_code'])['item_code'].astype(str)
+    items = items[items['item_code'].astype(str).isin(configured_codes)].reset_index(drop=True)
     order = pd.read_csv(orders_path, index_col=False)
 
     total_available_item = items.shape[0]
     if total_available_item >= total_requested_item:
 
         if total_available_item > total_requested_item:
-            print("Total SKU is less than total items in the items.csv")
-            print("Total SKU will be set to the total items in the items.csv")
+            print("Total SKU is less than total items in the sku_sample.csv")
+            print("Total SKU will be set to the total items in the sku_sample.csv")
             total_requested_item = total_available_item
 
         temp = 0
@@ -110,18 +115,22 @@ def gen_backlog(initial_order, total_requested_item, items_orders_class_configur
             for r in rand:
                 if r <= thresholds[0]:
                     # print(f"  below {thresholds[0]}, then the class is {keys[0]}")
-                    item_available = items.loc[(items["item_class"] == keys[0]) & (
+                    item_available = items.loc[(items["cluster"] == keys[0]) & (
                         ~items.index.isin(item_exist)), "item_order_frequency"]
                     # class_item = keys[0]
 
                 for l in range(len(thresholds) - 1):
                     if thresholds[l] < r <= thresholds[l + 1]:
                         # print(f"  between {thresholds[l]} and {thresholds[l + 1]}, then the class is {keys[l+1]}")
-                        item_available = items.loc[(items["item_class"] == keys[l+1]) & (
+                        item_available = items.loc[(items["cluster"] == keys[l+1]) & (
                             ~items.index.isin(item_exist)), "item_order_frequency"]
                         # class_item = keys[l+1]
 
-                item_probability = (item_available / item_available.sum()).to_list()
+                freq_sum = item_available.sum()
+                if freq_sum == 0:
+                    item_probability = (np.ones(len(item_available)) / len(item_available)).tolist() if len(item_available) > 0 else []
+                else:
+                    item_probability = (item_available / freq_sum).to_list()
                 item_available = item_available.index.to_list()
                 if len(item_available) > 0:
                     item_id = np.random.choice(item_available, p=item_probability)
@@ -192,14 +201,19 @@ def gen_order(order_cycle_time,
               date,
               dev_mode):
 
-    items_path = os.path.join(parent_directory, 'items.csv')
+    root_directory = os.path.dirname(parent_directory)
+    items_path = os.path.join(root_directory, 'sku_sample.csv')
     items = pd.read_csv(items_path, index_col=False)
+    items['item_order_frequency'] = pd.to_numeric(items['item_order_frequency'], errors='coerce').fillna(0)
+    configured_path = os.path.join(root_directory, 'best_config_per_sku.csv')
+    configured_codes = pd.read_csv(configured_path, usecols=['item_code'])['item_code'].astype(str)
+    items = items[items['item_code'].astype(str).isin(configured_codes)].reset_index(drop=True)
 
     total_available_item = items.shape[0]
 
     if (total_available_item > total_requested_item) or (total_available_item == total_requested_item):
-        print("Total SKU is less than total items in the items.csv")
-        print("Total SKU will be set to the total items in the items.csv")
+        print("Total SKU is less than total items in the sku_sample.csv")
+        print("Total SKU will be set to the total items in the sku_sample.csv")
         total_requested_item = total_available_item
 
     if total_available_item >= total_requested_item:
@@ -263,18 +277,22 @@ def gen_order(order_cycle_time,
             for r in rand:
                 if r <= thresholds[0]:
                     # print(f"  below {thresholds[0]}, then the class is {keys[0]}")
-                    item_available = items.loc[(items["item_class"] == keys[0]) & (
+                    item_available = items.loc[(items["cluster"] == keys[0]) & (
                         ~items.index.isin(item_exist)), "item_order_frequency"]
                     class_item = keys[0]
 
                 for l in range(len(thresholds) - 1):
                     if thresholds[l] < r <= thresholds[l + 1]:
                         # print(f"  between {thresholds[l]} and {thresholds[l + 1]}, then the class is {keys[l+1]}")
-                        item_available = items.loc[(items["item_class"] == keys[l+1]) & (
+                        item_available = items.loc[(items["cluster"] == keys[l+1]) & (
                             ~items.index.isin(item_exist)), "item_order_frequency"]
                         class_item = keys[l+1]
 
-                item_probability = (item_available / item_available.sum()).to_list()
+                freq_sum = item_available.sum()
+                if freq_sum == 0:
+                    item_probability = (np.ones(len(item_available)) / len(item_available)).tolist() if len(item_available) > 0 else []
+                else:
+                    item_probability = (item_available / freq_sum).to_list()
                 item_available = item_available.index.to_list()
                 if len(item_available) > 0:
                     item_id = np.random.choice(item_available, p=item_probability)

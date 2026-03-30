@@ -4,6 +4,30 @@ import pandas as pd
 sku_dict = pd.read_csv("sku_dictionary.csv")
 slots_cfg = pd.read_csv("items_slots_configuration.csv", sep=";")
 
+# ── 1b. Recompute item_order_frequency from raw orders ────────────────────────
+# Algorithm:
+#   For each SKU, count how many distinct order_ids it appeared in.
+#   This reflects how frequently an item was actually ordered (order-level),
+#   as opposed to demand_frequency which measures on which days demand was nonzero.
+#
+#   Steps:
+#   1. Load raw order lines (one row = one SKU in one order)
+#   2. Group by item_code, count unique order_ids per SKU
+#   3. Merge the result back into sku_dict, overwriting item_order_frequency
+raw_orders = pd.read_csv("raw_order.csv", sep=";", usecols=["order_id", "item_code"])
+raw_orders["item_code"] = raw_orders["item_code"].astype(str)
+order_freq = (
+    raw_orders.groupby("item_code")["order_id"]
+    .nunique()
+    .reset_index()
+    .rename(columns={"order_id": "item_order_frequency"})
+)
+sku_dict["item_code"] = sku_dict["item_code"].astype(str)
+sku_dict = sku_dict.drop(columns=["item_order_frequency"], errors="ignore")
+sku_dict = sku_dict.merge(order_freq, on="item_code", how="left")
+sku_dict["item_order_frequency"] = sku_dict["item_order_frequency"].fillna(0).astype(int)
+print(f"item_order_frequency recomputed from raw_order.csv")
+
 # ── 2. Feasibility filter ─────────────────────────────────────────────────────
 # Feasible = item_code appears at least once in items_slots_configuration
 feasible_codes = slots_cfg["item_code"].unique()
