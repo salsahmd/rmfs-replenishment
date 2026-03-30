@@ -236,6 +236,10 @@ def initRobots(universe: Inventory):
         # Add the robot to the universe, which likely involves adding it to some internal list or map
         universe.addObject(robot)
 
+    # KL gate alpha: fraction of total slots below rop_per_slot to trigger dispatch
+    # Change to 0.3 (aggressive), 0.5 (moderate), 0.7 (conservative)
+    universe.kl_alpha = 0.5
+
 
 def draw_layout(universe):
     # Check if generated_pod.csv exists in the current directory
@@ -765,8 +769,11 @@ def assign_skus_to_pods_from_file(pod_manager: PodManager):
             weight = float(row['item_weight'])
 
             # Find the pod by id
+            slot_id = int(row['slot_id'])
+            rop_per_slot = int(row['rop_per_slot']) if 'rop_per_slot' in row and row['rop_per_slot'] != '' else None
+
             pod: Pod = pod_manager.get_pod_by_id(pod_id)
-            pod.add_sku(sku, limit_qty=limit_qty, current_qty=current_qty, threshold=threshold, weight=weight)
+            pod.add_sku(sku, slot_id=slot_id, limit_qty=limit_qty, current_qty=current_qty, threshold=threshold, weight=weight, rop_per_slot=rop_per_slot)
             pod_manager.add_sku_to_pod(sku, pod)
 
             # Add SKU Data of level

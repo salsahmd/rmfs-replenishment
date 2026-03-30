@@ -163,19 +163,10 @@ class Inventory(Universe):
     def finish_picking_task(self, job: RobotJob):
         pod: Pod = self.pod_manager.get_pod_by_coordinate(job.pod_coordinate.x, job.pod_coordinate.y)
         pod_info_df = pd.read_csv('pod_info.csv')
-        sku_need_replenished = []
         for order_id, sku, quantity in job.orders:
             order: Order = self.order_manager.get_order_by_id(order_id)
             order.deliver_quantity(sku, quantity)
             print("order, sku, quantity :" ,order_id, sku, quantity)
-
-            # Check for SKU Replenishment
-            # sku is sku_id (String)
-
-            sku, replenished_status = self.pod_manager.is_sku_need_replenished(sku)
-
-            # SKU Replenished Triggered
-            if(replenished_status == True): sku_need_replenished.append(sku)
 
             assign_order_df = pd.read_csv('assign_order.csv')
             assign_order_df.loc[((assign_order_df['order_id'] == order.order_id) & (assign_order_df['item_id'] == sku)), 'status'] = 1
@@ -202,12 +193,10 @@ class Inventory(Universe):
         station.remove_pod(pod.pod_id)
 
         pod_info_df.to_csv('pod_info.csv', index=False)
-        # Replenishment baseline
         job.is_finished = True
-        if len(sku_need_replenished) > 0:
-            return True
-        need_replenish_pod = pod.check_replenishment_needed()
-        print(f"reple ga yaaa {need_replenish_pod}")
+        kl_alpha = getattr(self, 'kl_alpha', 0.5)
+        need_replenish_pod = pod.check_replenishment_needed(kl_alpha=kl_alpha)
+        print(f"replenishment needed: {need_replenish_pod}")
         return need_replenish_pod
 
     def finish_replenishment_task(self, job: RobotJob):
@@ -489,8 +478,9 @@ class Inventory(Universe):
             for pod_id in station.incoming_pod:
                 pod = self.pod_manager.get_pod_by_id(pod_id)
                 for sku, details in pod.skus.items():
-                    if details['current_qty'] > 0:
-                        station_sku_quantity[sku] = station_sku_quantity.get(sku, 0) + details['current_qty']
+                    qty = sum(s['current_qty'] for s in details['slots'])
+                    if qty > 0:
+                        station_sku_quantity[sku] = station_sku_quantity.get(sku, 0) + qty
 
             for order in unassigned_orders:
                 total_order_qty = sum([x.get('total_quantity') for x in order.skus.values()])

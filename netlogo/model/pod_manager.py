@@ -90,7 +90,7 @@ class PodManager:
     def get_available_pod(self, sku: str):
         if sku in self.sku_to_pods:
             for pod in self.sku_to_pods[sku]:
-                if pod.is_idle is True and pod.skus[sku]['current_qty'] > 0:
+                if pod.is_idle is True and pod.get_quantity(sku) > 0:
                     return pod
     #emily PPS
     def get_available_pod_similarity(self, sku: str, skus_in_station, station_coordinate, robots_coordinate): # use in Emily's pod picking
@@ -219,67 +219,75 @@ class PodManager:
         
         return distance_to_robot_score
     
+    @staticmethod
+    def _slots_qty(sku_data):
+        """Return total current_qty across all slots for a SKU entry."""
+        return sum(s['current_qty'] for s in sku_data['slots'])
+
+    @staticmethod
+    def _slots_deduct(sku_data, amount):
+        """Deduct amount from slots FIFO (highest first), modifies sku_data in place."""
+        remaining = amount
+        for slot in sorted(sku_data['slots'], key=lambda s: -s['current_qty']):
+            take = min(remaining, slot['current_qty'])
+            slot['current_qty'] -= take
+            remaining -= take
+            if remaining == 0:
+                break
+
     def _count_fulfillment(self, skus_in_station_dict, pod_skus):
         total_fulfillment = 1
         pod_skus_copy = copy.deepcopy(pod_skus)
         for sku in skus_in_station_dict:
             for order_qty in skus_in_station_dict[sku]:
-                if sku in pod_skus_copy and pod_skus_copy[sku]["current_qty"] >= order_qty:
-                    pod_skus_copy[sku]["current_qty"] -= order_qty
+                if sku in pod_skus_copy and self._slots_qty(pod_skus_copy[sku]) >= order_qty:
+                    self._slots_deduct(pod_skus_copy[sku], order_qty)
                     total_fulfillment += 1
-                else: 
+                else:
                     continue
 
         return total_fulfillment
-    
-    def _count_fulfillment_combined_rika (self, skus_in_station_dict, pod_skus):
+
+    def _count_fulfillment_combined_rika(self, skus_in_station_dict, pod_skus):
         total_fulfillment = 0
         pod_skus_copy = copy.deepcopy(pod_skus)
 
         for sku in skus_in_station_dict:
             for order_qty in skus_in_station_dict[sku]:
-                if sku in pod_skus_copy and pod_skus_copy[sku]["current_qty"] > 0:
-                    
-                    available = pod_skus_copy[sku]["current_qty"]
+                if sku in pod_skus_copy and self._slots_qty(pod_skus_copy[sku]) > 0:
+                    available = self._slots_qty(pod_skus_copy[sku])
                     fulfill_qty = min(order_qty, available)
-
-                    pod_skus_copy[sku]["current_qty"] -= fulfill_qty
-                    total_fulfillment += fulfill_qty  # count what was actually used
-                    # That order is done. Don't reuse this qty for another.
+                    self._slots_deduct(pod_skus_copy[sku], fulfill_qty)
+                    total_fulfillment += fulfill_qty
 
         return total_fulfillment
-    
-    def get_occupied_sku_rika (self, skus_in_station_dict, pod_skus):
+
+    def get_occupied_sku_rika(self, skus_in_station_dict, pod_skus):
         pod_skus_copy = copy.deepcopy(pod_skus)
         occupied_sku = {}
 
         for sku in skus_in_station_dict:
             for order_qty in skus_in_station_dict[sku]:
-                if sku in pod_skus_copy and pod_skus_copy[sku]["current_qty"] > 0:
-                
-                    available = pod_skus_copy[sku]["current_qty"]
+                if sku in pod_skus_copy and self._slots_qty(pod_skus_copy[sku]) > 0:
+                    available = self._slots_qty(pod_skus_copy[sku])
                     fulfill_qty = min(order_qty, available)
-
-                    pod_skus_copy[sku]["current_qty"] -= fulfill_qty
-
+                    self._slots_deduct(pod_skus_copy[sku], fulfill_qty)
                     if fulfill_qty > 0:
-                        if sku not in occupied_sku:
-                            occupied_sku[sku] = 0
-                        occupied_sku[sku] += fulfill_qty
+                        occupied_sku[sku] = occupied_sku.get(sku, 0) + fulfill_qty
 
         return occupied_sku
-    
+
     def get_available_sku_rika(self, pod_skus, occupied_sku):
         pod_skus_copy = copy.deepcopy(pod_skus)
 
         for sku, used_qty in occupied_sku.items():
             if sku in pod_skus_copy:
-                pod_skus_copy[sku]["current_qty"] -= used_qty
+                self._slots_deduct(pod_skus_copy[sku], used_qty)
 
         available_sku = {
-            sku: data["current_qty"]
+            sku: self._slots_qty(data)
             for sku, data in pod_skus_copy.items()
-            if data["current_qty"] > 0
+            if self._slots_qty(data) > 0
         }
 
         return available_sku

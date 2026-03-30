@@ -69,7 +69,7 @@ class StationManager:
                     station_pod_skus_set = set()  # Jenis SKU yang ada di pod yang ngantri + otw
                     for pod_id in station_incoming_pod:
                         pod  = pod_manager.get_pod_by_id(pod_id)
-                        pod_skus = [item for item, details in pod.skus.items() if details['current_qty'] > 0]
+                        pod_skus = [item for item, details in pod.skus.items() if sum(s['current_qty'] for s in details['slots']) > 0]
                         station_pod_skus_set.update(pod_skus)
                         # print(f"station_pod_skus_set: {station_pod_skus_set}")
 
@@ -157,7 +157,7 @@ class StationManager:
                     station_pod_skus_set = set() #kenapa set ? bisa
                     for pod_id in station_incoming_pod:
                         pod  = pod_manager.get_pod_by_id(pod_id)
-                        pod_skus = [item for item, details in pod.skus.items() if details['current_qty'] > 0]
+                        pod_skus = [item for item, details in pod.skus.items() if sum(s['current_qty'] for s in details['slots']) > 0]
                         station_pod_skus_set.update(pod_skus)
                         # print(f"station_pod_skus_set: {station_pod_skus_set}")
 

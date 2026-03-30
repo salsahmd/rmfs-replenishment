@@ -92,7 +92,7 @@ def generate_items_csv(sku_sample_path, items_dict_path, output_path,
 
 
 def convert_detail_to_pods_csv(detail_df, items_df, output_path,
-                               pods_dict_path=None):
+                               pods_dict_path=None, rop_path=None):
     """
     Convert sku_assignment_detail → pods.csv in PodGenerator format.
 
@@ -129,6 +129,19 @@ def convert_detail_to_pods_csv(detail_df, items_df, output_path,
         pods_df.to_csv(output_path, index=False)
         return pods_df
 
+    # Merge rop_per_slot if provided
+    if rop_path is not None and os.path.exists(str(rop_path)):
+        rop_df = pd.read_csv(rop_path)
+        rop_df["item_code"] = rop_df["item_code"].astype(str)
+        pods_df = pods_df.merge(rop_df[["item_code", "rop_per_slot"]], on="item_code", how="left")
+        pods_df["rop_per_slot"] = pd.to_numeric(pods_df["rop_per_slot"], errors="coerce").fillna(0).astype(int)
+        # If rop_per_slot >= max_qty (item too large, only 1 unit fits per slot),
+        # set to 0 so fallback ratio check is used (trigger only when slot is empty)
+        qty_assigned = pd.to_numeric(pods_df["qty_items_assigned"], errors="coerce").fillna(0).astype(int)
+        pods_df.loc[pods_df["rop_per_slot"] >= qty_assigned, "rop_per_slot"] = 0
+    else:
+        pods_df["rop_per_slot"] = 0
+
     pods_df["total_item_weight"] = (pods_df["item_weight"] *
                                     pd.to_numeric(pods_df["qty_items_assigned"], errors="coerce").fillna(0)).round(3)
     pods_df["slot_sequence"] = range(len(pods_df))
@@ -149,7 +162,8 @@ def convert_detail_to_pods_csv(detail_df, items_df, output_path,
 
     int_cols = ["pod_id", "pod_type", "slot_id", "slot_type", "item",
                 "unusedColumn1", "unusedColumn2", "unusedColumn3",
-                "qty", "max_qty", "due_date", "facing", "pick_ind", "slot_sequence"]
+                "qty", "max_qty", "due_date", "facing", "pick_ind", "slot_sequence",
+                "rop_per_slot"]
     for col in int_cols:
         pods_df[col] = pd.to_numeric(pods_df[col], errors="coerce").fillna(0).astype(int)
 
@@ -162,7 +176,8 @@ def convert_detail_to_pods_csv(detail_df, items_df, output_path,
 def run_full_conversion(base_dir, netlogo_dir,
                         sku_sample_path=None, items_dict_path=None,
                         items_slots_config_path=None,
-                        pod_inventory_levels=None, warehouse_inventory_levels=None):
+                        pod_inventory_levels=None, warehouse_inventory_levels=None,
+                        rop_path=None):
     """
     Orchestrator: run assignment → generate items.csv → generate pods.csv.
 
@@ -208,6 +223,7 @@ def run_full_conversion(base_dir, netlogo_dir,
         items_df=items_df,
         output_path=netlogo / "pods.csv",
         pods_dict_path=pods_dict_path,
+        rop_path=rop_path,
     )
 
     print("=" * 60)
