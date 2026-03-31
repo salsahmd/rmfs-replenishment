@@ -3732,3 +3732,16 @@ order_id,order_arrival,process_start_time,order_complete_time,station_id
 29,1140,2591,2795,picker-1
 27,1080,2408,2812,picker-2
 21,960,2330,2830,picker-2
+-45,0,1,45,picker-3
+-36,0,1,45,picker-3
+-26,0,1,418,picker-1
+-32,0,1,236,picker-1
+-1,0,1,362,picker-2
+-2,0,1,518,picker-2
+-6,0,1,68,picker-2
+-37,0,1,91,picker-2
+-47,0,1,109,picker-3
+-40,0,1,355,picker-3
+-50,0,1,53,picker-2
+-32,0,1,111,picker-1
+-26,0,1,302,picker-2

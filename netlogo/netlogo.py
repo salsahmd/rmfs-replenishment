@@ -1,6 +1,7 @@
 import csv
 import pickle
 import os
+import sys
 import traceback
 from typing import List
 import random
@@ -264,7 +265,7 @@ def draw_layout_from_generated_file(universe: Inventory):
         items_orders_class_configuration={3: 0.40, 1: 0.35, 2: 0.22, 0: 0.03},  # Item class configuration in warehouse (cluster-based)
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
-        order_period_time=2,  # the total hours
+        order_period_time=8,  # the total hours
         order_start_arrival_time=5,  # Start time of order arrival
         date=1,
         sim_ver=1,
@@ -276,7 +277,7 @@ def draw_layout_from_generated_file(universe: Inventory):
         items_orders_class_configuration={3: 0.40, 1: 0.35, 2: 0.22, 0: 0.03},  # Item class configuration in warehouse (cluster-based)
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=120,  # Number of order per hour
-        order_period_time=3,
+        order_period_time=8,
         order_start_arrival_time=5,
         date=1,
         sim_ver=2,
@@ -829,8 +830,8 @@ def setup():
         return next_result[0]
 
     except Exception as e:
-        # Print complete stack trace
-        traceback.print_exc()
+        # Print complete stack trace to stderr so it's visible even when stdout is suppressed
+        traceback.print_exc(file=sys.stderr)
         return "An error occurred. See the details above."
 
 
@@ -846,7 +847,7 @@ def tick():
 
         # Perform a simulation tick
         next_result = universe.tick()
-        if universe._tick > 1000:
+        if universe._tick > 28800:
             return IndexError
 
         # Save updated state
@@ -860,8 +861,8 @@ def tick():
                 universe.total_turning, next_result[1]]
 
     except Exception as e:
-        # Print complete stack trace
-        traceback.print_exc()
+        # Print complete stack trace to stderr so it's visible even when stdout is suppressed
+        traceback.print_exc(file=sys.stderr)
         return "An error occurred. See the details above."
 
 

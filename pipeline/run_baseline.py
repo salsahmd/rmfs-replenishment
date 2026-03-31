@@ -133,19 +133,23 @@ def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_pa
     """Compute order throughput, replenishment/pick ratio, and pod utilization."""
     metrics = {}
 
-    # Orders finished
+    # Orders finished — database orders only (backlog orders have negative order_id)
     orders_finished = 0
     if os.path.exists(order_finished_path):
         finished_df = pd.read_csv(order_finished_path)
-        orders_finished = len(finished_df)
+        finished_df["order_id"] = pd.to_numeric(finished_df["order_id"], errors="coerce")
+        orders_finished = int((finished_df["order_id"] >= 0).sum())
     metrics["orders_finished"] = orders_finished
 
-    # Order throughput = orders finished / orders generated
+    # Orders generated — database orders only (generated_order.csv may contain merged backlog)
     orders_generated = 0
     if os.path.exists(generated_order_path):
-        gen_df = pd.read_csv(generated_order_path, dtype=str)
-        orders_generated = gen_df["order_id"].nunique()
+        gen_df = pd.read_csv(generated_order_path)
+        gen_df["order_id"] = pd.to_numeric(gen_df["order_id"], errors="coerce")
+        orders_generated = gen_df.loc[gen_df["order_id"] >= 0, "order_id"].nunique()
     metrics["orders_generated"] = orders_generated
+
+    # order_throughput = database orders completed / database orders generated
     metrics["order_throughput"] = (
         orders_finished / orders_generated if orders_generated > 0 else 0.0
     )
