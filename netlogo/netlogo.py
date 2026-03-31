@@ -817,7 +817,7 @@ def setup():
         draw_layout(universe)
 
         # Set simulation parameters
-        universe.tick_to_second = 0.15
+        universe.tick_to_second = 0.25
 
         # Generate initial results
         next_result = universe.generateResult()

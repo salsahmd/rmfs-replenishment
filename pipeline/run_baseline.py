@@ -138,7 +138,7 @@ def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_pa
     if os.path.exists(order_finished_path):
         finished_df = pd.read_csv(order_finished_path)
         finished_df["order_id"] = pd.to_numeric(finished_df["order_id"], errors="coerce")
-        orders_finished = int((finished_df["order_id"] >= 0).sum())
+        orders_finished = int(finished_df.loc[finished_df["order_id"] >= 0, "order_id"].nunique())
     metrics["orders_finished"] = orders_finished
 
     # Orders generated — database orders only (generated_order.csv may contain merged backlog)
