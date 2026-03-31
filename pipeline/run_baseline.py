@@ -129,7 +129,7 @@ def run_simulation(max_ticks):
 
 # ── results ──────────────────────────────────────────────────
 
-def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_path):
+def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_path, max_ticks=None, tick_to_second=0.25):
     """Compute order throughput, replenishment/pick ratio, and pod utilization."""
     metrics = {}
 
@@ -141,12 +141,17 @@ def compute_extra_metrics(generated_order_path, pod_info_path, order_finished_pa
         orders_finished = int(finished_df.loc[finished_df["order_id"] >= 0, "order_id"].nunique())
     metrics["orders_finished"] = orders_finished
 
-    # Orders generated — database orders only (generated_order.csv may contain merged backlog)
+    # Orders generated — only orders that arrived within the simulation window
     orders_generated = 0
     if os.path.exists(generated_order_path):
         gen_df = pd.read_csv(generated_order_path)
         gen_df["order_id"] = pd.to_numeric(gen_df["order_id"], errors="coerce")
-        orders_generated = gen_df.loc[gen_df["order_id"] >= 0, "order_id"].nunique()
+        gen_df["order_arrival"] = pd.to_numeric(gen_df["order_arrival"], errors="coerce")
+        mask = gen_df["order_id"] >= 0
+        if max_ticks is not None:
+            sim_duration_seconds = max_ticks * tick_to_second
+            mask = mask & (gen_df["order_arrival"] <= sim_duration_seconds)
+        orders_generated = gen_df.loc[mask, "order_id"].nunique()
     metrics["orders_generated"] = orders_generated
 
     # order_throughput = database orders completed / database orders generated
@@ -266,7 +271,8 @@ def main():
 
     # Compute extra metrics
     order_finished_path = os.path.join("output", "order-finished.csv")
-    extra = compute_extra_metrics("generated_order.csv", "pod_info.csv", order_finished_path)
+    extra = compute_extra_metrics("generated_order.csv", "pod_info.csv", order_finished_path,
+                                  max_ticks=args.max_ticks, tick_to_second=0.25)
 
     # Save results
     results_dir = os.path.join(PROJECT_ROOT, "results_baseline")

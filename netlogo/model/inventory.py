@@ -229,15 +229,16 @@ class Inventory(Universe):
 
     def find_new_orders(self):
         file_path = 'assign_order.csv'
-        if os.path.exists(file_path):
+        if os.path.exists(file_path) and pd.read_csv(file_path).shape[0] > 0:
             assign_order_df = pd.read_csv(file_path)
-            # pass
         else:
             orders_df = pd.read_csv('generated_order.csv')
             assign_order_df = orders_df.copy()
             assign_order_df['assigned_station'] = None
             assign_order_df['assigned_pod'] = None
             assign_order_df['status'] = -3
+            assign_order_df['order_processed'] = None
+            assign_order_df['order_finished'] = None
             assign_order_df.to_csv('assign_order.csv', index=False)
         new_file_df = pd.read_csv(file_path)
 
@@ -310,9 +311,6 @@ class Inventory(Universe):
         for order in self.order_manager.unfinished_orders:
             assign_order_df = pd.read_csv('assign_order.csv')
             if order.station_id is None:
-                break
-                # available_station = self.station_manager.find_available_picking_station()
-                # available_station = self.station_manager.find_highest_supplyrate_station_rika(order.skus, self.pod_manager)
                 # NOTE: THIS ONE IS TO ASSIGN ORDER TO A PICKING STATION
                 available_station = self.station_manager.find_highest_similarity_station(order.skus, self.pod_manager)
                 if available_station is not None:
@@ -323,7 +321,7 @@ class Inventory(Universe):
                     assign_order_df.loc[assign_order_df['order_id'] == order.order_id, 'status'] = -1
 
                 else:
-                    break
+                    continue
 
             if order.process_start_time <= 0:
                 order.start_processing(int(self._tick))

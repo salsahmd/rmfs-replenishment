@@ -746,11 +746,11 @@ def assign_skus_to_pods(pod_manager):
     else:
         # Fungsi generate pods.csv
         # PodGenerator(pod_manager).generate()
-        PodGenerator(pod_types=[0], pod_num=[420], total_sku=500,
-                      items_class_conf={"A": 0.1, "B": 0.3, "C": 0.6},
-                      items_pods_inventory_levels={"A": 0.4, "B": 0.5, "C": 0.6},
-                      items_warehouse_inventory_levels={"A": 0.4, "B": 0.5, "C": 0.6},
-                      items_pods_class_conf={"A": 0.6, "B": 0.3, "C": 0.1},
+        PodGenerator(pod_types=[0], pod_num=[420], total_sku=789,
+                      items_class_conf={0: 0.03, 1: 0.35, 2: 0.22, 3: 0.40},
+                      items_pods_inventory_levels={0: 0.3, 1: 0.4, 2: 0.5, 3: 0.6},
+                      items_warehouse_inventory_levels={0: 0.3, 1: 0.4, 2: 0.5, 3: 0.6},
+                      items_pods_class_conf={0: 0.05, 1: 0.25, 2: 0.30, 3: 0.40},
                       pod_manager=pod_manager,
                       dev_mode=False).generate()
         assign_skus_to_pods_from_file(pod_manager)
@@ -811,6 +811,10 @@ def setup():
         pod_info = "pod_info.csv"
         if os.path.exists(pod_info):
             os.remove(pod_info)
+
+        order_finished = os.path.join("output", "order-finished.csv")
+        if os.path.exists(order_finished):
+            os.remove(order_finished)
         universe = Inventory()
 
         # Populate the universe with objects and connections
@@ -847,7 +851,7 @@ def tick():
 
         # Perform a simulation tick
         next_result = universe.tick()
-        if universe._tick > 28800:
+        if universe._tick > 115200:
             return IndexError
 
         # Save updated state
