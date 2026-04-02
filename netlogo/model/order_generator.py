@@ -57,13 +57,15 @@ def get_random_quantity(quantity_range=[1, 12]):
 def gen_backlog(initial_order, total_requested_item, items_orders_class_configuration,quantity_range,dev_mode):
 
     root_directory = os.path.dirname(parent_directory)
-    items_path = os.path.join(root_directory, 'sku_sample.csv')
     orders_path = os.path.join(parent_directory, 'generated_order.csv')
-    items = pd.read_csv(items_path, index_col=False)
+    # Use items.csv (correct item_id as index) filtered to SKUs in pods.csv
+    items_csv_path = os.path.join(parent_directory, 'items.csv')
+    pods_csv_path = os.path.join(parent_directory, 'pods.csv')
+    items = pd.read_csv(items_csv_path, index_col=0)
     items['item_order_frequency'] = pd.to_numeric(items['item_order_frequency'], errors='coerce').fillna(0)
-    configured_path = os.path.join(root_directory, 'best_config_per_sku.csv')
-    configured_codes = pd.read_csv(configured_path, usecols=['item_code'])['item_code'].astype(str)
-    items = items[items['item_code'].astype(str).isin(configured_codes)].reset_index(drop=True)
+    items['cluster'] = items['item_class']
+    pods_item_ids = set(pd.read_csv(pods_csv_path, usecols=['item'])['item'].unique())
+    items = items[items.index.isin(pods_item_ids)]
     order = pd.read_csv(orders_path, index_col=False)
 
     total_available_item = items.shape[0]
@@ -202,12 +204,14 @@ def gen_order(order_cycle_time,
               dev_mode):
 
     root_directory = os.path.dirname(parent_directory)
-    items_path = os.path.join(root_directory, 'sku_sample.csv')
-    items = pd.read_csv(items_path, index_col=False)
+    # Use items.csv (correct item_id as index) filtered to SKUs in pods.csv
+    items_csv_path = os.path.join(parent_directory, 'items.csv')
+    pods_csv_path = os.path.join(parent_directory, 'pods.csv')
+    items = pd.read_csv(items_csv_path, index_col=0)
     items['item_order_frequency'] = pd.to_numeric(items['item_order_frequency'], errors='coerce').fillna(0)
-    configured_path = os.path.join(root_directory, 'best_config_per_sku.csv')
-    configured_codes = pd.read_csv(configured_path, usecols=['item_code'])['item_code'].astype(str)
-    items = items[items['item_code'].astype(str).isin(configured_codes)].reset_index(drop=True)
+    items['cluster'] = items['item_class']
+    pods_item_ids = set(pd.read_csv(pods_csv_path, usecols=['item'])['item'].unique())
+    items = items[items.index.isin(pods_item_ids)]
 
     total_available_item = items.shape[0]
 

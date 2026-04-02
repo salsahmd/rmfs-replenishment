@@ -195,12 +195,23 @@ class Inventory(Universe):
         pod_info_df.to_csv('pod_info.csv', index=False)
         job.is_finished = True
         kl_alpha = getattr(self, 'kl_alpha', 0.5)
-        need_replenish_pod = pod.check_replenishment_needed(kl_alpha=kl_alpha)
+        picked_skus = {sku for _, sku, _ in job.orders}
+        # Rule 2: global emergency — any just-picked SKU's global qty fell below rop_global
+        if self.pod_manager.has_globally_flagged_sku(picked_skus):
+            need_replenish_pod = True
+        else:
+            # Rule 1: local KL gate — flagged_slots / total_slots >= kl_alpha
+            need_replenish_pod = pod.check_replenishment_needed(kl_alpha=kl_alpha)
         print(f"replenishment needed: {need_replenish_pod}")
         return need_replenish_pod
 
     def finish_replenishment_task(self, job: RobotJob):
         pod: Pod = self.pod_manager.get_pod_by_coordinate(job.pod_coordinate.x, job.pod_coordinate.y)
+        # Restore global qty before refilling slots
+        for sku, data in pod.skus.items():
+            added = sum(slot['limit_qty'] - slot['current_qty'] for slot in data['slots'])
+            if added > 0:
+                self.pod_manager.restore_sku_data(sku, added)
         pod.replenish_all_skus()
         pod_info_df = pd.read_csv('pod_info.csv')
         new_row = {

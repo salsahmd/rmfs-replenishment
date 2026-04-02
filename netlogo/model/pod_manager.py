@@ -31,7 +31,7 @@ class PodManager:
             self.sku_to_pods[sku] = []
         self.sku_to_pods[sku].append(pod)
 
-    def add_sku_data(self,sku,current_qty,max_qty,global_threshold_inv_level):
+    def add_sku_data(self, sku, current_qty, max_qty, global_threshold_inv_level, rop_global=None):
         sku_id = sku
 
         if sku_id not in self.skus_data:
@@ -39,21 +39,41 @@ class PodManager:
                 'current_global_qty': current_qty,
                 'max_global_qty': max_qty,
                 'global_inv_level': (current_qty / max_qty),
-                'global_threshold_inv_level' : global_threshold_inv_level
+                'global_threshold_inv_level' : global_threshold_inv_level,
+                'rop_global': rop_global,
             }
         else:
             self.skus_data[sku_id]['current_global_qty'] += current_qty
             self.skus_data[sku_id]['max_global_qty'] += max_qty
             self.skus_data[sku_id]['global_inv_level'] = self.skus_data[sku_id]['current_global_qty'] / self.skus_data[sku_id]['max_global_qty']
+            if rop_global is not None and self.skus_data[sku_id].get('rop_global') is None:
+                self.skus_data[sku_id]['rop_global'] = rop_global
 
     def reduce_sku_data(self,sku,quantity):
          if sku in self.skus_data:
             self.skus_data[sku]['current_global_qty'] -= quantity
             self.skus_data[sku]['global_inv_level'] = self.skus_data[sku]['current_global_qty'] / self.skus_data[sku]['max_global_qty']
 
+    def restore_sku_data(self, sku, quantity):
+        if sku in self.skus_data:
+            self.skus_data[sku]['current_global_qty'] += quantity
+            self.skus_data[sku]['global_inv_level'] = self.skus_data[sku]['current_global_qty'] / self.skus_data[sku]['max_global_qty']
+
     def get_all_skus_data(self):
         return self.skus_data
-    
+
+    def has_globally_flagged_sku(self, picked_skus):
+        """Rule 2: True if any of the just-picked SKUs has current_global_qty < rop_global."""
+        for sku in picked_skus:
+            data = self.skus_data.get(sku)
+            if data is None:
+                continue
+            rop = data.get('rop_global')
+            if rop is not None and rop > 0:
+                if data['current_global_qty'] < rop:
+                    return True
+        return False
+
     def is_sku_need_replenished(self, sku_id):
         print(f"sku_id {sku_id} level {self.skus_data[sku_id]['global_inv_level']}")
         if float(self.skus_data[sku_id]['global_inv_level']) <= float(self.skus_data[sku_id]['global_threshold_inv_level']):

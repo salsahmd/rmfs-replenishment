@@ -102,6 +102,8 @@ class DirectedGraph:
         # Increase the weight of the edges leading to and from the nodes to avoid
         if avoid:
             for node in avoid:
+                if node not in G:
+                    continue
                 for neighbor in list(G.neighbors(node)) + list(G.predecessors(node)):
                     # Increase the weight significantly to discourage using these paths
                     if G.has_edge(neighbor, node):
@@ -144,6 +146,8 @@ class DirectedGraph:
         # Increase the weight of the edges leading to and from the nodes to avoid
         if avoid:
             for node in avoid:
+                if node not in G:
+                    continue
                 for neighbor in list(G.neighbors(node)) + list(G.predecessors(node)):
                     # Increase the weight significantly to discourage using these paths
                     if G.has_edge(neighbor, node):
@@ -772,13 +776,14 @@ def assign_skus_to_pods_from_file(pod_manager: PodManager):
             # Find the pod by id
             slot_id = int(row['slot_id'])
             rop_per_slot = int(row['rop_per_slot']) if 'rop_per_slot' in row and row['rop_per_slot'] != '' else None
+            rop_global = int(row['rop_global']) if 'rop_global' in row and row['rop_global'] != '' else None
 
             pod: Pod = pod_manager.get_pod_by_id(pod_id)
             pod.add_sku(sku, slot_id=slot_id, limit_qty=limit_qty, current_qty=current_qty, threshold=threshold, weight=weight, rop_per_slot=rop_per_slot)
             pod_manager.add_sku_to_pod(sku, pod)
 
             # Add SKU Data of level
-            pod_manager.add_sku_data(sku, current_qty, limit_qty, global_threshold_inv_level)
+            pod_manager.add_sku_data(sku, current_qty, limit_qty, global_threshold_inv_level, rop_global=rop_global)
 
     csv_file = 'skus_data.csv'
     if os.path.exists(csv_file):
