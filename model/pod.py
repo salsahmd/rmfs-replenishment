@@ -35,30 +35,23 @@ class Pod(Object):
     def coordinate(self):
         return NetLogoCoordinate(self.pos_x, self.pos_y)
 
-    def add_sku(self, sku, limit_qty, current_qty, threshold, weight):
-        """Add a new SKU with its limit, current quantity, and threshold."""
+    def add_sku(self, sku, limit_qty, current_qty, rop_per_pod, weight):
+        """Add a new SKU with its limit, current quantity, and ROP per pod."""
         self.skus[sku] = {
             'limit_qty': limit_qty,
             'current_qty': current_qty,
-            'threshold': threshold,
+            'rop_per_pod': rop_per_pod,
             'weight': weight,
         }
         self.mass += (self.skus[sku]['weight'] * self.skus[sku]['current_qty'])
 
-    def check_replenishment_needed(self):
-        """Check if 50% or more SKUs are below their threshold to determine if the pod needs to move to a
-        replenishment station."""
-        count_below_threshold = 0
-        total_skus = len(self.skus)
-        alpha = total_skus / 2
-        for details in self.skus.values():
-            # print(f"crt {details['current_qty']} limit {details['limit_qty']} th {details['threshold']}")
-            if float(details['current_qty'])/float(details['limit_qty']) <= float(details['threshold']):
-                count_below_threshold += 1
-
-        if count_below_threshold >= alpha:
-            return True
-        return False
+    def check_replenishment_needed(self, alpha=0.5):
+        """Check if fraction of SKUs below ROP per pod >= alpha."""
+        count_below_rop = sum(
+            1 for details in self.skus.values()
+            if details['current_qty'] <= details['rop_per_pod']
+        )
+        return (count_below_rop / len(self.skus)) >= alpha
 
     def replenish_all_skus(self):
         """Replenish all SKUs by setting each SKU's current quantity to its limit quantity."""

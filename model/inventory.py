@@ -297,8 +297,8 @@ class Inventory(Universe):
         job.set_job_finish()
         if len(sku_need_replenished) > 0:
             return True
-        need_replenish_pod = pod.check_replenishment_needed()
-#        print(f"reple ga yaaa {need_replenish_pod}")
+        need_replenish_pod = pod.check_replenishment_needed(alpha=0.5)
+        print(f"reple ga yaaa {need_replenish_pod}")
         # HACK
         # return False
         return need_replenish_pod

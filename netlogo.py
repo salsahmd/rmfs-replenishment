@@ -785,17 +785,17 @@ def assign_skus_to_pods_from_file(pod_manager: PodManager):
             sku = int(row['item'])
             limit_qty = int(row['max_qty'])
             current_qty = int(row['qty'])
-            threshold = row['item_pod_inventory_level']
-            global_threshold_inv_level = row['item_warehouse_inventory_level']
+            rop_per_pod = float(row['rop_per_pod'])
+            rop_global  = float(row['rop_global'])
             weight = float(row['item_weight'])
 
             # Find the pod by id
             pod: Pod = pod_manager.get_pod_by_id(pod_id)
-            pod.add_sku(sku, limit_qty=limit_qty, current_qty=current_qty, threshold=threshold, weight=weight)
+            pod.add_sku(sku, limit_qty=limit_qty, current_qty=current_qty, rop_per_pod=rop_per_pod, weight=weight)
             pod_manager.add_sku_to_pod(sku, pod)
 
             # Add SKU Data of level
-            pod_manager.add_sku_data(sku, current_qty, limit_qty, global_threshold_inv_level)
+            pod_manager.add_sku_data(sku, current_qty, limit_qty, rop_global)
 
     csv_file = 'skus_data.csv'
     if os.path.exists(csv_file):
