@@ -18,6 +18,9 @@ class Landscape:
     def get_robot_object(self):
         return self._objects
     
+    def _in_bounds(self, x, y):
+        return 0 <= round(x) <= self.dimension and 0 <= round(y) <= self.dimension
+
     def _setObjectNew(self, label, x, y, speed, acceleration, heading, state, load_mass):
         self.total_objects += 1
 
@@ -37,26 +40,31 @@ class Landscape:
             'load_mass': load_mass,
         }
 
-        self._map[round(x)][round(y)].append(self._objects[label])
+        if self._in_bounds(x, y):
+            self._map[round(x)][round(y)].append(self._objects[label])
 
     def setObject(self, label, x, y, speed, acceleration, heading, state, load_mass):
         if label not in self._objects:
             return self._setObjectNew(label, x, y, speed, acceleration, heading, state, load_mass)
-        
+
         old_x = round(self._objects[label]['x'])
         old_y = round(self._objects[label]['y'])
-        
+
         # check if x or y has changed
         if round(x) != old_x or round(y) != old_y:
             # remove from old position
-            to_iter = self._map[old_x][old_y] 
-            for index, e in enumerate(to_iter):
-                if e['label'] == label:
-                    del to_iter[index]
-                    break
+            if self._in_bounds(old_x, old_y):
+                to_iter = self._map[old_x][old_y]
+                for index, e in enumerate(to_iter):
+                    if e['label'] == label:
+                        del to_iter[index]
+                        break
 
             # add to new position
-            self._map[round(x)][round(y)].append(self._objects[label])
+            if self._in_bounds(x, y):
+                self._map[round(x)][round(y)].append(self._objects[label])
+            else:
+                print(f"[WARN] landscape.setObject out-of-bounds: label={label} x={x:.2f} y={y:.2f} dim={self.dimension}")
 
         movement = 'vertical'
         if heading == 270 or heading == 90:

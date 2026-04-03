@@ -842,7 +842,12 @@ def setup():
         pod_info = "pod_info.csv"
         if os.path.exists(pod_info):
             os.remove(pod_info)
+
+        order_finished_path = os.path.join("output", "order-finished.csv")
+        if os.path.exists(order_finished_path):
+            os.remove(order_finished_path)
         universe = Inventory()
+        universe.timestamp = timestamp  # persist so console_tick() can restore DB globals
 
         # Populate the universe with objects and connections
         draw_layout(universe)
@@ -902,13 +907,44 @@ def console_tick():
         with open('netlogo.state', 'rb') as file:
             universe: Inventory = pickle.load(file)
 
+        # Restore DB table timestamp globals lost between processes
+        ts = getattr(universe, 'timestamp', None)
+        if ts:
+            initialize_job_task_table(ts)
+            initialize_order_history_table(ts)
+            initialize_pod_location_table(ts)
+            initialize_pod_travel_table(ts)
+
         # Update each object with the current universe context
         for _n in universe._objects:
             _n.setUniverse(universe)
+
+        MAX_TICK    = 28800
+        REPORT_EVERY = 500   # print progress every N ticks
+
+        print(f"\n{'='*55}")
+        print(f"  SIMULATION RUNNING  (max tick: {MAX_TICK})")
+        print(f"{'='*55}")
+
         while True:
             # Perform a simulation tick
             next_result = universe.tick()
-            if universe._tick > 28800:
+
+            # Progress update every REPORT_EVERY ticks
+            if universe._tick % REPORT_EVERY < universe.tick_to_second:
+                pct      = min(universe._tick / MAX_TICK * 100, 100)
+                bar_len  = 30
+                filled   = int(bar_len * pct / 100)
+                bar      = "█" * filled + "░" * (bar_len - filled)
+                sim_h    = universe._tick * universe.tick_to_second / 3600
+                print(f"\r  [{bar}] {pct:5.1f}%  tick={universe._tick:.0f}  "
+                      f"sim={sim_h:.2f}h  "
+                      f"orders_done={universe.total_orders_finished}  "
+                      f"queue={len(universe.job_queue)}",
+                      end="", flush=True)
+
+            if universe._tick > MAX_TICK:
+                print()  # newline after progress bar
                 universe.print_metrics()
                 return IndexError
 

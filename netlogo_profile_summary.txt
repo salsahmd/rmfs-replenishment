@@ -1,0 +1,28 @@
+         16108467 function calls (16062193 primitive calls) in 7.995 seconds
+
+   Ordered by: internal time
+   List reduced from 1841 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      362    1.253    0.003    1.908    0.005 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/pandas/io/formats/csvs.py:317(_save_chunk)
+      852    0.865    0.001    0.964    0.001 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/pandas/io/parsers/c_parser_wrapper.py:203(read)
+    29924    0.551    0.000    0.585    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/model/robot.py:291(get_robot_by_name)
+     6690    0.488    0.000    0.488    0.000 {method 'astype' of 'numpy.ndarray' objects}
+     1514    0.372    0.000    0.372    0.000 {method 'execute' of 'sqlite3.Cursor' objects}
+       87    0.302    0.003    0.485    0.006 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/networkx/algorithms/shortest_paths/weighted.py:1389(_inner_bellman_ford)
+     3578    0.253    0.000    0.321    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/model/inventory.py:448(get_movable_objects)
+       87    0.214    0.002    0.358    0.004 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/networkx/classes/digraph.py:748(add_edges_from)
+    18980    0.204    0.000    0.300    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/engine/landscape.py:77(getNeighborObject)
+      982    0.204    0.000    0.204    0.000 {method 'commit' of 'sqlite3.Connection' objects}
+     2839    0.157    0.000    0.160    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/pandas/core/arrays/string_.py:756(_from_sequence)
+  3388283    0.155    0.000    0.155    0.000 {method 'append' of 'list' objects}
+       87    0.135    0.002    0.171    0.002 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/networkx/classes/digraph.py:500(add_nodes_from)
+  1823011    0.114    0.000    0.114    0.000 {method 'get' of 'dict' objects}
+      852    0.104    0.000    0.125    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/pandas/io/parsers/c_parser_wrapper.py:65(__init__)
+1366519/1363443    0.091    0.000    0.131    0.000 {built-in method builtins.isinstance}
+     1018    0.088    0.000    0.200    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/engine/universe.py:30(generateResult)
+     1017    0.080    0.000    7.344    0.007 /Users/salsahmd/Downloads/netlogo_SA_8_new/model/inventory.py:117(tick)
+    14482    0.075    0.000    0.316    0.000 /Users/salsahmd/Downloads/netlogo_SA_8_new/.venv/lib/python3.14/site-packages/pandas/core/construction.py:531(sanitize_array)
+1674922/1637464    0.073    0.000    0.079    0.000 {built-in method builtins.len}
+
+

@@ -737,12 +737,8 @@ class Robot(Object):
                         location_coordinate=station.coordinate,
                         robot_coordinate=self.coordinate
                     )
-                    print(f"[DEBUG] nearest_storage: {nearest_storage}")
-                    print(f"[DEBUG] {vars(nearest_storage)}")
-
                     if nearest_storage is not None:
                         self.destination = NetLogoCoordinate(nearest_storage.pos_x, nearest_storage.pos_y)  # nearest_storage.coordinate
-                        print(f"[DEBUG] destination: {self.destination}")
                         self.job.pod_return_coordinate = self.destination
                         self.job.writePodReturnReport(
                             calculateManhattanDistance((self.job.pod_return_coordinate.x,self.job.pod_return_coordinate.y),
@@ -940,7 +936,7 @@ class Robot(Object):
 
         # self.w1 = NetLogoCoordinate(self.job.pod.pos_x, self.job.pod.pos_y)
         # self.destination = NetLogoCoordinate(self.job.pod.pos_x, self.job.pod.pos_y)
-        print(f"[DEBUG] destination: {self.destination}")
+#        print(f"[DEBUG] destination: {self.destination}")
 
         if self.close_enough(self.destination):
             # self.job.pod.pos_x = self.pos_x

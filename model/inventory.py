@@ -118,20 +118,15 @@ class Inventory(Universe):
         # Get initial state
         result = super().generateResult()
         
-        print(f"Current tick: {self._tick}")
-
         # Reset movement tracking
         self.movement_channel = {}
-        
+
         # Process orders at scheduled intervals
         if int(self._tick) == self.next_process_tick:
-            print(f"Processing orders at tick {self._tick}")
             self.find_new_orders()
             self.process_orders()
             if self.update_intersection_using_RL:
                 self.intersection_manager.update_allowed_direction_using_q_model(int(self._tick))
-
-        print(f"Current job queue length: {len(self.job_queue)}")
 
         if len(self.job_queue) > 0:
             job = self.job_queue[0]
@@ -149,7 +144,7 @@ class Inventory(Universe):
 
                 if nearest_robot is not None:
                     self.job_queue.remove(job)  # Remove the selected job from the queue
-                    print(f"Assigning job {job.pod}-{job.station_id} to robot {nearest_robot._id}")
+#                    print(f"Assigning job {job.pod}-{job.station_id} to robot {nearest_robot._id}")
                     nearest_robot.assign_job_and_set_move_to_take_pod(job)
                     for triplet in job.orders:
                         upsert_job_task(
@@ -257,7 +252,7 @@ class Inventory(Universe):
         for order_id, sku, quantity in job.orders:
             order: Order = self.order_manager.get_order_by_id(order_id)
             order.deliver_quantity(sku, quantity)
-            print("order, sku, quantity :" ,order_id, sku, quantity)
+#            print("order, sku, quantity :" ,order_id, sku, quantity)
 
             # Check for SKU Replenishment
             # sku is sku_id (String)
@@ -283,7 +278,7 @@ class Inventory(Universe):
             new_row_df = pd.DataFrame([new_row])
             pod_info_df = pd.concat([pod_info_df, new_row_df], ignore_index=True)
             
-            if order.is_order_completed():
+            if order.is_order_completed() and order in self.order_manager.unfinished_orders:
                 self.order_manager.finish_order(order_id, int(self._tick))
                 station = self.station_manager.get_station_by_id(order.station_id)
                 station.remove_order(order_id,order)
@@ -303,7 +298,7 @@ class Inventory(Universe):
         if len(sku_need_replenished) > 0:
             return True
         need_replenish_pod = pod.check_replenishment_needed()
-        print(f"reple ga yaaa {need_replenish_pod}")
+#        print(f"reple ga yaaa {need_replenish_pod}")
         # HACK
         # return False
         return need_replenish_pod
@@ -355,32 +350,62 @@ class Inventory(Universe):
 
         # Pod utilization = average (current_qty / limit_qty) across all slots in all pods
         total_current, total_limit = 0, 0
-        for pod in self.pod_manager.pods.values():
+        for pod in self.pod_manager.pods:
             for sku_data in pod.skus.values():
                 total_current += sku_data.get("current_qty", 0)
                 total_limit   += sku_data.get("limit_qty", 1)
         pod_utilization = total_current / total_limit if total_limit > 0 else 0.0
 
-        print("\n" + "=" * 55)
-        print("SIMULATION RESULTS")
-        print("=" * 55)
-        print(f"  Simulated time          : {sim_time:.1f} s  ({sim_time/3600:.2f} h)")
-        print(f"  Total ticks             : {self._tick}")
-        print(f"")
-        print(f"  Orders generated        : {self.total_orders_generated}")
-        print(f"  Orders finished         : {self.total_orders_finished}")
-        print(f"  Throughput              : {throughput:.4f}  (finished / generated)")
-        print(f"")
-        print(f"  Picking trips           : {self.total_picking_trips}")
-        print(f"  Replenishment trips     : {self.total_replenishment_trips}")
-        print(f"  Rep / Pick ratio        : {rep_pick_ratio:.4f}")
-        print(f"")
-        print(f"  Pod utilization         : {pod_utilization:.4f}  ({pod_utilization*100:.1f}%)")
-        print(f"")
-        print(f"  Total energy            : {self.total_energy:.2f} J")
-        print(f"  Stop-and-go events      : {self.stop_and_go}")
-        print(f"  Total turning           : {self.total_turning}")
-        print("=" * 55)
+        lines = [
+            "=" * 55,
+            "SIMULATION RESULTS",
+            "=" * 55,
+            f"  Simulated time          : {sim_time:.1f} s  ({sim_time/3600:.2f} h)",
+            f"  Total ticks             : {self._tick}",
+            "",
+            f"  Orders generated        : {self.total_orders_generated}",
+            f"  Orders finished         : {self.total_orders_finished}",
+            f"  Throughput              : {throughput:.4f}  (finished / generated)",
+            "",
+            f"  Picking trips           : {self.total_picking_trips}",
+            f"  Replenishment trips     : {self.total_replenishment_trips}",
+            f"  Rep / Pick ratio        : {rep_pick_ratio:.4f}",
+            "",
+            f"  Pod utilization         : {pod_utilization:.4f}  ({pod_utilization*100:.1f}%)",
+            "",
+            f"  Total energy            : {self.total_energy:.2f} J",
+            f"  Stop-and-go events      : {self.stop_and_go}",
+            f"  Total turning           : {self.total_turning}",
+            "=" * 55,
+        ]
+
+        print("\n" + "\n".join(lines))
+
+        # Save metrics to output/simulation_metrics.csv
+        import csv as _csv
+        from datetime import datetime as _dt
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output')
+        os.makedirs(output_dir, exist_ok=True)
+        metrics_path = os.path.join(output_dir, 'simulation_metrics.csv')
+        file_exists = os.path.exists(metrics_path)
+        with open(metrics_path, 'a', newline='') as f:
+            writer = _csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    'timestamp', 'sim_time_s', 'total_ticks',
+                    'orders_generated', 'orders_finished', 'throughput',
+                    'picking_trips', 'replenishment_trips', 'rep_pick_ratio',
+                    'pod_utilization', 'total_energy', 'stop_and_go', 'total_turning',
+                ])
+            writer.writerow([
+                _dt.now().strftime('%Y-%m-%d %H:%M:%S'),
+                round(sim_time, 2), self._tick,
+                self.total_orders_generated, self.total_orders_finished, round(throughput, 4),
+                self.total_picking_trips, self.total_replenishment_trips, round(rep_pick_ratio, 4),
+                round(pod_utilization, 4), round(self.total_energy, 2),
+                self.stop_and_go, self.total_turning,
+            ])
+        print(f"  Metrics saved to: output/simulation_metrics.csv")
 
     def find_new_orders(self):
         file_path = 'assign_order.csv'
@@ -472,7 +497,7 @@ class Inventory(Universe):
                         general_orders[order.order_id] = remaining_skus
                     else:
                         general_orders[order.order_id] = remaining_skus
-                print(f"[DEBUG] priority orders {priority_orders}")
+#                print(f"[DEBUG] priority orders {priority_orders}")
                 # Handle priority orders first
                 if priority_orders:
                     pod_assigned = False
@@ -482,13 +507,13 @@ class Inventory(Universe):
                         # for pod_id in [k for k, v in self.pod_manager.pod_idle.items() if v]:
                         for pod in idle_pods:
                             pod_id = pod.pod_id
-                            print(f"[DEBUG] pod_id {pod_id} with")
+#                            print(f"[DEBUG] pod_id {pod_id} with")
                             # pod = self.pod_manager.get_pod_by_id(pod_id)
                             can_fulfill = any(
                                 sku in pod.skus and pod.skus[sku]["current_qty"] >= qty
                                 for sku, qty in remaining_skus.items()
                             )
-                            print(f"[DEBUG] can fulfill {can_fulfill}")
+#                            print(f"[DEBUG] can fulfill {can_fulfill}")
                             if can_fulfill:
                                 sku_to_quantity = {sku: qty for sku, qty in remaining_skus.items()}
                                 sku_to_order_map = {sku: [(order_id, qty)] for sku, qty in remaining_skus.items()}
@@ -521,7 +546,7 @@ class Inventory(Universe):
                         sku_to_order_map[sku].append((o_id, qty))
 
                 if not sku_to_quantity:
-                    print(f"skipping pod search for station {station.station_id}")
+#                    print(f"skipping pod search for station {station.station_id}")
                     continue
 
                 # Pod selection
@@ -728,8 +753,8 @@ class Inventory(Universe):
         # Step 2: Filter only idle pods
         pod_candidates = {pod for pod in pod_candidates if self.pod_manager.is_idle(pod.pod_id)}
 
-        print(f"[DEBUG] Checking candidates for mode={mode} skus={relevant_skus}")
-        print(f"[DEBUG] pod_candidates={pod_candidates}")
+#        print(f"[DEBUG] Checking candidates for mode={mode} skus={relevant_skus}")
+#        print(f"[DEBUG] pod_candidates={pod_candidates}")
 
         if not pod_candidates:
             return None, -1
@@ -750,7 +775,7 @@ class Inventory(Universe):
             reverse=True
         )
 
-        print(f"[DEBUG] ranked_pods (mode={mode}) = {ranked_pods}")
+#        print(f"[DEBUG] ranked_pods (mode={mode}) = {ranked_pods}")
         return ranked_pods[0]
 
     def add_picking_task_after_pps(self, station: Station, pod: Pod, sku_to_list_order_id_and_quantity: dict, sku_to_quantity: dict):
@@ -1198,7 +1223,7 @@ class Inventory(Universe):
                 if rid not in [x.id for x in inside_station]:
                     # print(f"removing robot queue {r} from {station_id}")
                     self.robot_queue_order[station_id].remove(rid)
-            print(f"current robot inside station {station_id}: {self.robot_queue_order[station_id]}")
+#            #print(f"current robot inside station {station_id}: {self.robot_queue_order[station_id]}")
             my_robot_queue_order = [None] * len(self.robot_queue_order[station_id])
             for n, rid in enumerate(self.robot_queue_order[station_id]):
                 my_robot_queue_order[n] = [o for o in self.get_movable_objects() if o.object_type == "robot" and o.id == rid]
@@ -1307,7 +1332,7 @@ class Inventory(Universe):
                 if rid not in [x.id for x in inside_station]:
                     # print(f"removing robot queue {r} from {station_id}")
                     self.robot_queue_order[station_id].remove(rid)
-            print(f"current robot inside station {station_id}: {self.robot_queue_order[station_id]}")
+#            #print(f"current robot inside station {station_id}: {self.robot_queue_order[station_id]}")
             my_robot_queue_order = [None] * len(self.robot_queue_order[station_id])
             for n, rid in enumerate(self.robot_queue_order[station_id]):
                 my_robot_queue_order[n] = [o for o in self.get_movable_objects() if o.object_type == "robot" and o.id == rid]
@@ -1371,7 +1396,16 @@ class Inventory(Universe):
                 if available[sku] < req_qty:
                     return False
             return True
-        df['unpicked_skus'] = df['unpicked_skus'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        def _safe_parse(x):
+            if isinstance(x, dict):
+                return x
+            if isinstance(x, str):
+                import re as _re
+                # Replace np.int64(n) with plain n before literal_eval
+                x = _re.sub(r'np\.int64\((\d+)\)', r'\1', x)
+                return ast.literal_eval(x)
+            return x
+        df['unpicked_skus'] = df['unpicked_skus'].apply(_safe_parse)
         df['next_bin_avail'] = df.apply(is_fulfilled, axis=1)
         return df
     

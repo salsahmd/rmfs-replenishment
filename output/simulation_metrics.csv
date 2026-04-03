@@ -1,0 +1,2 @@
+timestamp,sim_time_s,total_ticks,orders_generated,orders_finished,throughput,picking_trips,replenishment_trips,rep_pick_ratio,pod_utilization,total_energy,stop_and_go,total_turning
+2026-04-03 17:57:14,7200.06,28800.25,2476,0,0.0,55,0,0.0,0.9971,0,0,0
