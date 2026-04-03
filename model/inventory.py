@@ -47,6 +47,10 @@ class Inventory(Universe):
     total_pod = 0
     total_turning = 0
     total_robot_idle = 0
+    total_picking_trips = 0
+    total_replenishment_trips = 0
+    total_orders_finished = 0
+    total_orders_generated = 0
     movement_channel = {}
     graph = None
     graph_pod = None
@@ -195,6 +199,7 @@ class Inventory(Universe):
                             new_job = RobotJob(pod.coordinate, station_id=station_replenish.station_id, pod=pod)
                             new_job.add_replenishment_task(pod)
                             o.assign_job_and_set_move_to_station(new_job)
+                            self.total_replenishment_trips += 1
 
                 # Reset completed jobs
                 if o.current_state == 'idle' and o.job is not None:
@@ -283,6 +288,7 @@ class Inventory(Universe):
                 station = self.station_manager.get_station_by_id(order.station_id)
                 station.remove_order(order_id,order)
                 self.insert_finished_order_to_csv(order)
+                self.total_orders_finished += 1
                 # DB
                 # if not isinstance(order.order_id, int):
                     # raise AssertionError(f"WHAT? order {order} order_id {order.order_id} order_id {order_id}")
@@ -332,6 +338,50 @@ class Inventory(Universe):
 
         self.write_to_csv("order-finished.csv", header, data)
 
+    def print_metrics(self):
+        sim_time = self._tick * self.tick_to_second  # total simulated seconds
+
+        # Throughput = orders finished / orders generated
+        throughput = (
+            self.total_orders_finished / self.total_orders_generated
+            if self.total_orders_generated > 0 else 0.0
+        )
+
+        # Rep/pick ratio
+        rep_pick_ratio = (
+            self.total_replenishment_trips / self.total_picking_trips
+            if self.total_picking_trips > 0 else 0.0
+        )
+
+        # Pod utilization = average (current_qty / limit_qty) across all slots in all pods
+        total_current, total_limit = 0, 0
+        for pod in self.pod_manager.pods.values():
+            for sku_data in pod.skus.values():
+                total_current += sku_data.get("current_qty", 0)
+                total_limit   += sku_data.get("limit_qty", 1)
+        pod_utilization = total_current / total_limit if total_limit > 0 else 0.0
+
+        print("\n" + "=" * 55)
+        print("SIMULATION RESULTS")
+        print("=" * 55)
+        print(f"  Simulated time          : {sim_time:.1f} s  ({sim_time/3600:.2f} h)")
+        print(f"  Total ticks             : {self._tick}")
+        print(f"")
+        print(f"  Orders generated        : {self.total_orders_generated}")
+        print(f"  Orders finished         : {self.total_orders_finished}")
+        print(f"  Throughput              : {throughput:.4f}  (finished / generated)")
+        print(f"")
+        print(f"  Picking trips           : {self.total_picking_trips}")
+        print(f"  Replenishment trips     : {self.total_replenishment_trips}")
+        print(f"  Rep / Pick ratio        : {rep_pick_ratio:.4f}")
+        print(f"")
+        print(f"  Pod utilization         : {pod_utilization:.4f}  ({pod_utilization*100:.1f}%)")
+        print(f"")
+        print(f"  Total energy            : {self.total_energy:.2f} J")
+        print(f"  Stop-and-go events      : {self.stop_and_go}")
+        print(f"  Total turning           : {self.total_turning}")
+        print("=" * 55)
+
     def find_new_orders(self):
         file_path = 'assign_order.csv'
         if os.path.exists(file_path):
@@ -364,6 +414,7 @@ class Inventory(Universe):
                 order.add_sku(item['item_id'], item['item_quantity'])
 
             self.order_manager.add_order(order)
+            self.total_orders_generated += 1
             # DB
             upsert_order_history(order.order_id, arrival_time=self._tick)
 
@@ -443,6 +494,7 @@ class Inventory(Universe):
                                 sku_to_order_map = {sku: [(order_id, qty)] for sku, qty in remaining_skus.items()}
                                 job = self.add_picking_task_after_pps(station, pod, sku_to_order_map, sku_to_quantity)
                                 self.job_queue.append(job)
+                                self.total_picking_trips += 1
                                 for sku, qty in sku_to_quantity.items():
                                     upsert_job_task(
                                         pod_id=str(pod.pod_id),
@@ -488,6 +540,7 @@ class Inventory(Universe):
                 job = self.add_picking_task_after_pps(station, pod, sku_to_order_map, sku_to_quantity)
                 if len(job.orders) > 0:
                     self.job_queue.append(job)
+                    self.total_picking_trips += 1
                     for triplet in job.orders:
                         upsert_job_task(
                             pod_id=str(job.pod.pod_id),

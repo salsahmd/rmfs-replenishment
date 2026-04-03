@@ -264,14 +264,11 @@ def draw_layout_from_generated_file(universe: Inventory):
     assign_skus_to_pods(universe.pod_manager)
     config_orders(
         initial_order=100,
-        total_requested_item=500,  # Number of SKU in warehouse
-        # total_requested_item=1000,
-        items_orders_class_configuration={"A": 0.5, "B": 0.3, "C": 0.2}, # data 13
-        # items_orders_class_configuration={"A": 0.6, "B": 0.2, "C": 0.2}, # data 10 , 11 , 12
-        # items_orders_class_configuration={"A": 0.7, "B": 0.2, "C": 0.1},  # data 1 - 8 Item class configuration in warehouse
-        # items_orders_class_configuration={"A": 0.3, "B": 0.3, "C": 0.5}, # original
+        total_requested_item=975,  # 975 eligible SKUs from cluster-based assignment
+        # cluster-based order distribution: 0=slow(10%), 1=regular(30%), 2=top-fast(30%), 3=high-vol(30%)
+        items_orders_class_configuration={0: 0.05, 1: 0.30, 2: 0.15, 3: 0.50},
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
-        order_cycle_time=300,  # Number of order per hour #previous data 1 - 12 use 500 
+        order_cycle_time=300,  # Number of order per hour #previous data 1 - 12 use 500
         order_period_time=9,  # the total hours
         order_start_arrival_time=0,  # Start time of order arrival
         date=1,
@@ -280,12 +277,9 @@ def draw_layout_from_generated_file(universe: Inventory):
     # Config Backlog Orders
     config_orders(
         initial_order=100,  # Initial order in backlog
-        total_requested_item=500,  # Number of SKU in warehouse
-        # total_requested_item=1000,
-        # items_orders_class_configuration={"A": 0.7, "B": 0.2, "C": 0.1},  # data 1 -8 # Item class configuration in warehouse
-        items_orders_class_configuration={"A": 0.5, "B": 0.3, "C": 0.2}, # data 13
-        # items_orders_class_configuration={"A": 0.6, "B": 0.2, "C": 0.2}, #data 10 , 11 , 12
-        # items_orders_class_configuration={"A": 0.3, "B": 0.3, "C": 0.5}, # original
+        total_requested_item=975,  # 975 eligible SKUs from cluster-based assignment
+        # cluster-based order distribution: 0=slow(10%), 1=regular(30%), 2=top-fast(30%), 3=high-vol(30%)
+        items_orders_class_configuration={0: 0.05, 1: 0.30, 2: 0.15, 3: 0.50},
         quantity_range=[1, 12],  # Quantity range of number of SKU in each order
         order_cycle_time=300,  # Number of order per hour
         order_period_time=9,
@@ -854,7 +848,7 @@ def setup():
         draw_layout(universe)
 
         # Set simulation parameters
-        universe.tick_to_second = 0.15
+        universe.tick_to_second = 0.25
 
         # Generate initial results
         next_result = universe.generateResult()
@@ -915,6 +909,7 @@ def console_tick():
             # Perform a simulation tick
             next_result = universe.tick()
             if universe._tick > 28800:
+                universe.print_metrics()
                 return IndexError
 
         # Save updated state
