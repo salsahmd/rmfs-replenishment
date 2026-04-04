@@ -63,14 +63,14 @@ class PodManager:
         return self.skus_data
 
     def has_globally_flagged_sku(self, picked_skus):
-        """Rule 2: True if any of the just-picked SKUs has current_global_qty < rop_global."""
+        """Rule 2: True if any of the just-picked SKUs has current_global_qty <= rop_global."""
         for sku in picked_skus:
             data = self.skus_data.get(sku)
             if data is None:
                 continue
             rop = data.get('rop_global')
             if rop is not None and rop > 0:
-                if data['current_global_qty'] < rop:
+                if data['current_global_qty'] <= rop:
                     return True
         return False
 

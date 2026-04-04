@@ -35,12 +35,12 @@ import pandas as pd
 L = 1 / 8  # lead time = 1 hour / 8-hour working day
 
 Z_BY_CLUSTER = {
-    0: 1.28,   # ~80% service level
+    0: 1.65,   # ~95% service level
     1: 1.65,   # ~95% service level
-    2: 1.28,   # ~80% service level
-    3: 1.96,   # ~97.5% service level
+    2: 1.65,   # ~95% service level
+    3: 1.65,   # ~95% service level
 }
-Z_DEFAULT = 1.28  # fallback for unknown clusters
+Z_DEFAULT = 1.65  
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ def compute_rop(sku_sample_path: Path, pods_csv_path: Path,
     qty_col = "max_qty" if "max_qty" in pods_df.columns else "qty"
     s_total_series = pods_df.groupby("item_code")[qty_col].sum().rename("S_total")
 
-    # Inner join — keeps only 789 assigned SKUs
+    # Inner join — keeps only assigned SKUs (matches pods.csv)
     result = sku_df[["item_code", "cluster", "mean_demand", "std_demand",
                       "z", "rop_global"]].copy()
     result = result.merge(n_slots_series, on="item_code", how="inner")

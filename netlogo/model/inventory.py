@@ -120,7 +120,8 @@ class Inventory(Universe):
 
                 # Handle job completion and replenishment
                 if o.job is not None and o.job.picking_delay == 0 and not o.job.is_finished:
-                    need_replenish_pod = self.finish_task_in_job(o.job)
+                    result = self.finish_task_in_job(o.job)
+                    need_replenish_pod, replen_trigger = result if isinstance(result, tuple) else (result, None)
                     if need_replenish_pod:
                         pod: Pod = self.pod_manager.get_pod_by_coordinate(o.job.pod_coordinate.x, o.job.pod_coordinate.y)
                         station_replenish = self.station_manager.find_available_replenish_station()
@@ -128,6 +129,7 @@ class Inventory(Universe):
                             station_replenish.add_pod(pod.pod_id)
                             new_job = RobotJob(pod.coordinate, station_id=station_replenish.station_id, pod=pod)
                             new_job.add_replenishment_task(pod)
+                            new_job.replen_trigger = replen_trigger
                             o.assign_job_and_set_move_to_station(new_job)
 
                 # Reset completed jobs
@@ -178,7 +180,8 @@ class Inventory(Universe):
                 "qty": quantity,
                 "order_id": order_id,
                 "processed_time": int(self._tick),
-                "task_type": 1
+                "task_type": 1,
+                "trigger": None
             }
 
             new_row_df = pd.DataFrame([new_row])
@@ -198,12 +201,13 @@ class Inventory(Universe):
         picked_skus = {sku for _, sku, _ in job.orders}
         # Rule 2: global emergency — any just-picked SKU's global qty fell below rop_global
         if self.pod_manager.has_globally_flagged_sku(picked_skus):
-            need_replenish_pod = True
-        else:
-            # Rule 1: local KL gate — flagged_slots / total_slots >= kl_alpha
-            need_replenish_pod = pod.check_replenishment_needed(kl_alpha=kl_alpha)
-        print(f"replenishment needed: {need_replenish_pod}")
-        return need_replenish_pod
+            print(f"replenishment needed: True (trigger: global)")
+            return True, "global"
+        # Rule 1: local KL gate — flagged_slots / total_slots >= kl_alpha
+        need_replenish_pod = pod.check_replenishment_needed(kl_alpha=kl_alpha)
+        trigger = "pod" if need_replenish_pod else None
+        print(f"replenishment needed: {need_replenish_pod} (trigger: {trigger})")
+        return need_replenish_pod, trigger
 
     def finish_replenishment_task(self, job: RobotJob):
         pod: Pod = self.pod_manager.get_pod_by_coordinate(job.pod_coordinate.x, job.pod_coordinate.y)
@@ -220,7 +224,8 @@ class Inventory(Universe):
                 "qty": -1,
                 "order_id": -999,
                 "processed_time": int(self._tick),
-                "task_type": 2
+                "task_type": 2,
+                "trigger": getattr(job, 'replen_trigger', None)
             }
 
         new_row_df = pd.DataFrame([new_row])
