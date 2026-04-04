@@ -147,6 +147,20 @@ class Robot(Object):
                                                      NetLogoCoordinate) == False:
             now = path[len(path) - 1]
             route_stop_points.append(NetLogoCoordinate(now[0], now[1]))
+        elif not route_stop_points and len(path) > 0:
+            # Straight path (no direction changes) or single-point path.
+            # Without this the robot would advance_state immediately without travelling.
+            final = path[-1]
+            final_coord = NetLogoCoordinate(final[0], final[1])
+            if len(path) > 1:
+                p1 = NetLogoCoordinate(path[0][0], path[0][1])
+                p2 = NetLogoCoordinate(path[1][0], path[1][1])
+                required_heading = self.getHeading(p1, p2)
+                if self.heading != required_heading:
+                    # Robot is facing the wrong way — add a turn at the current position first
+                    route_stop_points.append(NetLogoCoordinate(path[0][0], path[0][1]))
+                    route_stop_points.append(Heading(required_heading))
+            route_stop_points.append(final_coord)
         self.route_stop_points = route_stop_points
 
     def changeColorByState(self):
@@ -340,7 +354,7 @@ class Robot(Object):
     def is_being_process_on_station(self):
         station: Station = self.universe.station_manager.get_station_by_id(self.job.station_id)
         return self.job.is_being_processed() and self.close_enough(
-            station.coordinate, 0.1)
+            station.coordinate, 0.5)
 
     def movementPlan(self):
         if self.picking_item_in_pod():

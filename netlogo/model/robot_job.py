@@ -13,7 +13,7 @@ class RobotJob:
         self.picking_delay_per_sku = 10 # Time for handling a task
         self.picking_delay = 0
         self.replenishment_delay_per_sku = 20
-        self.replenishment_delay = 80
+        self.replenishment_delay = 0
         self.is_finished = False
 
     def add_picking_task(self, order_id, sku, quantity):

@@ -17,4 +17,7 @@ class DeadlockPreventionManager:
         self._map[int(p.x)][int(p.y)] -= 1
 
     def coordinateBooked(self, p: NetLogoCoordinate):
-        return self._map[int(p.x)][int(p.y)] > 0
+        rx, ry = int(p.x), int(p.y)
+        if not (0 <= rx < len(self._map) and len(self._map) > 0 and 0 <= ry < len(self._map[0])):
+            return False
+        return self._map[rx][ry] > 0

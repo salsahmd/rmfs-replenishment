@@ -1,47 +1,56 @@
 """
-SKU-to-Pod Assignment  —  DC6 (ABC/XYZ Dimension-Constrained)
-==============================================================
-Implements the greedy FFD-inspired algorithm from Table 3.6 of the thesis.
+SKU-to-Pod Assignment
+=====================
+Greedy slot-filling algorithm with 1-item-per-pod constraint.
 
 Inputs
 ------
-  items_slots_configuration.csv  — feasible (item, slot_type, orientation) rows
-                                   produced by item_pod_config.py
-  sku_kmeans_clusters_cleaned.csv — cluster label + demand stats per SKU
-  sku_dictionary.csv             — box_weight, units_per_box,
-                                   item_initial_inventory (items),
-                                   item_initial_quantity_inventory (actual day-0 stock)
+  items_slots_configuration.csv — feasible (item, slot_type, orientation) rows
+                                  produced by item_pod_config.py
+  sku_sample.csv                — cluster label, demand stats, box dimensions,
+                                  initial inventory (boxes)
 
 Parameters
 ----------
+  TOTAL_PODS       = 300        — hard cap; no new pods created beyond this
   MAX_POD_WEIGHT   = 1300 kg
-  CLUSTER_PRIORITY = [4, 1, 3, 0, 2]  — class 4 is highest priority (high demand)
+  CLUSTER_PRIORITY = [3, 1, 0, 2]  — high-demand clusters (3, 1) placed first
+                                      on lower pod IDs (closer to stations); then 0 and 2
 
-Pod structure (from paper Table 3.6 line 2)
--------------------------------------------
-  POD_STRUCTURE = [0,0,0,1,1,1,2,2,2,2,2,2,2,2,3,3,4]
-  Every new pod is created with exactly these 17 slots (by slot_type).
-  Pods are created on demand — no hard cap.
+Pod structure
+-------------
+  POD_STRUCTURE = [0] * 10  — pod_type 0 from pods_dictionary.csv:
+                               10 identical slots, each 60×50×40 mm (slot_type 0)
 
-Assignment flow (paper Table 3.6)
-----------------------------------
-  1. Build flexibility metadata per SKU (num_compatible_slots, min_slot_type).
-  2. Sort: [cluster_priority ASC, num_compatible_slots ASC,
-             min_slot_type ASC, initial_inventory_boxes DESC]
-  3. Pass 1 — constrained items (num_compatible_slots ≤ 2): first-fit greedy.
-  4. Pass 2 — flexible items   (num_compatible_slots >  2): first-fit greedy.
-     Both passes: while remaining_boxes > 0 →
-       • Scan existing pods in order for a free compatible slot.
-       • If none found → create a new pod.
-  5. Pass 3 — secondary fill: scan every empty slot across all pods and
-     place any item that still has unassigned boxes.
+Constraints
+-----------
+  1. Each slot holds exactly 1 item_code.
+  2. Each item_code may appear at most once per pod (1 slot per item per pod).
+     If an item's initial inventory exceeds one slot's capacity, it is dispersed
+     across multiple pods — 1 slot each.
+  3. Total pods are capped at TOTAL_PODS = 300. Any inventory that cannot be
+     placed within 300 pods is flagged as unplaced in the output.
+
+Assignment flow
+---------------
+  1. Build slot compatibility metadata per SKU (num_compatible_slots).
+  2. Sort by: [cluster_priority ASC, num_compatible_slots ASC,
+               min_slot_type ASC, initial_inventory_boxes DESC]
+  3. Pass 1+2 — single greedy pass (constrained items first via sort order):
+       while remaining_boxes > 0:
+         • Scan existing pods in order; skip pods already containing this item.
+         • If a free compatible slot is found → assign min(remaining, capacity).
+         • If no slot found and pods < TOTAL_PODS → open a new pod.
+         • If pod cap reached → stop; remaining inventory is unplaced.
+  4. Pass 3 — secondary fill: for every empty slot across all pods, place the
+     highest-priority item not already present in that pod.
 
 Outputs
 -------
-  sku_assignment_detail.csv  — one row per (pod, slot) assignment
-  sku_assignment.csv         — one row per SKU with totals
-  pod_summary.csv            — one row per pod
-  unassigned_skus.csv        — items that could not be fully assigned
+  sku_assignment_detail.csv — one row per (pod, slot) assignment
+  sku_assignment.csv        — one row per SKU with totals + boxes_unplaced
+  pod_summary.csv           — one row per pod
+  unassigned_skus.csv       — items whose inventory could not be fully placed
 """
 
 import time
@@ -61,11 +70,11 @@ SERVICE_LEVEL_Z = 1.2816   # 90 % service level
 
 # Cluster priority: index 0 = highest priority
 # Cluster 3 = high-demand, assigned first and dispersed
-CLUSTER_PRIORITY = [3, 1, 0, 2]
+CLUSTER_PRIORITY = [3, 1, 0, 2]  # high-demand (3, 1) first, then low-demand (0, 2)
 
 # Pod slot structure (Table 3.6, line 2 of paper)
 # Each new pod is created with exactly these slot_types in this order.
-POD_STRUCTURE = [0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4]
+POD_STRUCTURE = [0] * 10  # pod_type=0: 10 slots, all slot_type=0
 
 # Constrained = num_compatible_slots <= this threshold (paper line 18)
 CONSTRAINED_THRESHOLD = 2
@@ -372,12 +381,12 @@ def assign_item(item_code: str, cluster: int, remaining_boxes: int,
         chosen_boxes  = 0
         chosen_weight = 0.0
 
-        # Scan pods in REVERSE order (most recently opened first = "last-fit").
-        # Classic first-fit (pod 0,1,2,...) spreads each item type thinly across
-        # every pod: e.g. type-2 items end up 1-per-pod across 6388 pods instead
-        # of 8-per-pod in 799 pods.  Last-fit fills the current open pod to
-        # capacity before advancing — dramatically reducing pod count.
-        for pod in reversed(pods):
+        # Scan pods in order, skipping pods that already contain this item_code
+        # (1-item-per-pod constraint: each item_code may appear at most once per pod).
+        for pod in pods:
+            items_in_pod = {s["item_code"] for s in pod["slots"] if s["item_code"] is not None}
+            if item_code in items_in_pod:
+                continue  # item already in this pod — skip
             for st in preferred_types:
                 for slot in pod["slots"]:
                     if slot["item_code"] is not None:
@@ -408,8 +417,10 @@ def assign_item(item_code: str, cluster: int, remaining_boxes: int,
             if chosen_slot is not None:
                 break
 
-        # Paper lines 34-37: no slot found → open a new pod
+        # No slot found → open a new pod (if pod cap not reached)
         if chosen_slot is None:
+            if next_pod_id_ref[0] >= TOTAL_PODS:
+                break  # pod cap reached — remaining inventory unassignable
             new_pod = make_pod(next_pod_id_ref[0])
             next_pod_id_ref[0] += 1
             pods.append(new_pod)
@@ -523,6 +534,7 @@ def secondary_fill(pods: list, items_df: pd.DataFrame,
     print(f"    [secondary_fill] candidate slot types: { {st: len(v) for st,v in slot_type_candidates.items()} }")
 
     for pod in pods:
+        items_in_pod = {s["item_code"] for s in pod["slots"] if s["item_code"] is not None}
         for slot in pod["slots"]:
             if slot["item_code"] is not None:
                 continue
@@ -532,6 +544,8 @@ def secondary_fill(pods: list, items_df: pd.DataFrame,
 
             chosen = None
             for rank, neg_vu, item_code, info, cfg in candidates:
+                if item_code in items_in_pod:
+                    continue  # 1-item-per-pod: skip items already in this pod
                 assign_boxes = cfg["max_boxes_in_slot"]   # fill slot completely
                 assign_boxes = max(assign_boxes, 1)
 
@@ -555,6 +569,7 @@ def secondary_fill(pods: list, items_df: pd.DataFrame,
 
             pod["total_weight"] += added_weight
             pod["class_set"].add(int(info["cluster"]))
+            items_in_pod.add(item_code)  # keep set current for remaining slots in this pod
 
             extra_rows.append({
                 "pod_id":             pod["pod_id"],
@@ -626,6 +641,10 @@ def build_outputs(detail_rows: list, pods: list,
     for c in ["total_boxes_assigned","total_items_assigned",
               "total_weight_assigned","pods_used","slots_used"]:
         sku_df[c] = sku_df[c].fillna(0)
+
+    sku_df["boxes_unplaced"] = (
+        sku_df["initial_inventory_boxes"] - sku_df["total_boxes_assigned"]
+    ).clip(lower=0).astype(int)
 
     unassigned_df = pd.DataFrame(unassigned) if unassigned else pd.DataFrame()
 
@@ -832,11 +851,29 @@ def run_assignment(base_dir=None, sku_sample_path=None,
     else:
         avg_pods_per_sku = 0.0
 
-    print(f"\n  Pods: {active_pods}, SKUs assigned: {assigned_skus}/{total_skus_eligible}, "
-          f"space util: {space_util_pct:.1f}%, runtime: {runtime_sec:.1f}s")
+    total_slots_available = TOTAL_PODS * len(POD_STRUCTURE)
+    total_slots_used = int(sku_df["slots_used"].sum())
+    items_with_unplaced = int((sku_df["boxes_unplaced"] > 0).sum())
 
-    if unassigned_n > 0:
-        print(f"  Unassigned SKUs: {unassigned_n}")
+    print(f"\n  Pods: {active_pods}/{TOTAL_PODS}, SKUs assigned: {assigned_skus}/{total_skus_eligible}, "
+          f"space util: {space_util_pct:.1f}%, runtime: {runtime_sec:.1f}s")
+    print(f"  Slots used: {total_slots_used} / {total_slots_available} total")
+
+    if items_with_unplaced > 0:
+        print(f"  Items with unplaced inventory: {items_with_unplaced}")
+
+    # Per-cluster placement summary
+    print(f"\n  {'cluster':>7}  {'items':>6}  {'pods_used':>9}  {'slots_used':>10}  "
+          f"{'boxes_placed':>12}  {'boxes_total':>11}  {'boxes_unplaced':>14}")
+    for cl in CLUSTER_PRIORITY:
+        sub = sku_df[sku_df["cluster"] == cl]
+        if sub.empty:
+            continue
+        print(f"  {cl:>7}  {len(sub):>6}  {int(sub['pods_used'].sum()):>9}  "
+              f"{int(sub['slots_used'].sum()):>10}  "
+              f"{int(sub['total_boxes_assigned'].sum()):>12}  "
+              f"{int(sub['initial_inventory_boxes'].sum()):>11}  "
+              f"{int(sub['boxes_unplaced'].sum()):>14}")
 
     return detail_df
 

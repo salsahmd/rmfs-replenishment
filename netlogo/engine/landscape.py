@@ -37,26 +37,29 @@ class Landscape:
             'load_mass': load_mass,
         }
 
-        self._map[round(x)][round(y)].append(self._objects[label])
+        if 0 <= round(x) <= self.dimension and 0 <= round(y) <= self.dimension:
+            self._map[round(x)][round(y)].append(self._objects[label])
 
     def setObject(self, label, x, y, speed, acceleration, heading, state, load_mass):
         if label not in self._objects:
             return self._setObjectNew(label, x, y, speed, acceleration, heading, state, load_mass)
-        
+
         old_x = round(self._objects[label]['x'])
         old_y = round(self._objects[label]['y'])
-        
+
         # check if x or y has changed
         if round(x) != old_x or round(y) != old_y:
-            # remove from old position
-            to_iter = self._map[old_x][old_y] 
-            for index, e in enumerate(to_iter):
-                if e['label'] == label:
-                    del to_iter[index]
-                    break
+            # remove from old position (only if old position was in bounds)
+            if 0 <= old_x <= self.dimension and 0 <= old_y <= self.dimension:
+                to_iter = self._map[old_x][old_y]
+                for index, e in enumerate(to_iter):
+                    if e['label'] == label:
+                        del to_iter[index]
+                        break
 
-            # add to new position
-            self._map[round(x)][round(y)].append(self._objects[label])
+            # add to new position (only if new position is in bounds)
+            if 0 <= round(x) <= self.dimension and 0 <= round(y) <= self.dimension:
+                self._map[round(x)][round(y)].append(self._objects[label])
 
         movement = 'vertical'
         if heading == 270 or heading == 90:
@@ -83,7 +86,7 @@ class Landscape:
         while i < x+check:
             j = y+radius
             while j > y-check:
-                if i >= 0 and j >= 0:
+                if i >= 0 and j >= 0 and i <= self.dimension and j <= self.dimension:
                     if i != x or j != y:
                         points_to_check.append([i, j])
                 j -= 1
@@ -98,7 +101,10 @@ class Landscape:
         return result
 
     def get_neighbor_object(self, x, y):
-        s = self._map[round(x)][round(y)]
+        rx, ry = round(x), round(y)
+        if not (0 <= rx <= self.dimension and 0 <= ry <= self.dimension):
+            return None
+        s = self._map[rx][ry]
         if len(s) > 0:
             for obj in s:
                 return self._objects[obj['label']]

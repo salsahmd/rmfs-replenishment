@@ -81,27 +81,39 @@ def oriented_dims(l0: float, w0: float, h0: float, d: int):
 # =============================================================================
 # LOAD & VALIDATE POD SIZE
 # =============================================================================
-def load_pod_size(path: Path) -> pd.DataFrame:
+def load_pod_size(path: Path, pod_type: int = None) -> pd.DataFrame:
     """
-    Loads pod_size.csv.
+    Loads slot size configuration.
 
-    Expected columns
-    ----------------
-    Required : slot_type, slot_length, slot_width, slot_height
-    Optional : slots_per_pod  (used downstream to compute max_boxes_in_pod;
-                                if missing or NaN the column is kept as NaN
-                                and max_boxes_in_pod will also be NaN)
+    Two modes
+    ---------
+    pod_type=None  : legacy pod_size.csv — each row is one slot type
+    pod_type=<int> : pods_dictionary.csv — filter to the given pod_type,
+                     derive unique slot types and slots_per_pod from row counts
 
-    No pod_type column is required — each row defines one slot type
-    independently of which pod model it belongs to.
+    Output columns (both modes)
+    ---------------------------
+    slot_type, slot_length, slot_width, slot_height, slot_volume, slots_per_pod
     """
     df = read_csv_auto_sep(path)
     df = normalize_cols(df)
 
+    if pod_type is not None:
+        # pods_dictionary.csv mode: filter to requested pod_type then collapse
+        if "pod_type" not in df.columns:
+            raise ValueError(f"pods_dictionary missing 'pod_type' column. Found: {list(df.columns)}")
+        df["pod_type"] = pd.to_numeric(df["pod_type"], errors="coerce")
+        df = df[df["pod_type"] == pod_type].copy()
+        if df.empty:
+            raise ValueError(f"No rows found for pod_type={pod_type} in {path}")
+        # slots_per_pod = count of each slot_type within this pod_type
+        slots_per_pod = df.groupby("slot_type").size().rename("slots_per_pod").reset_index()
+        df = df.drop_duplicates("slot_type").merge(slots_per_pod, on="slot_type")
+
     required = {"slot_type", "slot_length", "slot_width", "slot_height"}
     missing = required - set(df.columns)
     if missing:
-        raise ValueError(f"pod_size.csv missing columns: {missing}. Found: {list(df.columns)}")
+        raise ValueError(f"{path.name} missing columns: {missing}. Found: {list(df.columns)}")
 
     for c in ["slot_length", "slot_width", "slot_height"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
