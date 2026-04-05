@@ -197,7 +197,7 @@ class Inventory(Universe):
 
         pod_info_df.to_csv('pod_info.csv', index=False)
         job.is_finished = True
-        kl_alpha = getattr(self, 'kl_alpha', 0.5)
+        kl_alpha = getattr(self, 'kl_alpha', 0.3)
         picked_skus = {sku for _, sku, _ in job.orders}
         # Rule 2: global emergency — any just-picked SKU's global qty fell below rop_global
         if self.pod_manager.has_globally_flagged_sku(picked_skus):

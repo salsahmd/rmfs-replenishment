@@ -243,7 +243,7 @@ def initRobots(universe: Inventory):
 
     # KL gate alpha: fraction of total slots below rop_per_slot to trigger dispatch
     # Change to 0.3 (aggressive), 0.5 (moderate), 0.7 (conservative)
-    universe.kl_alpha = 0.5
+    universe.kl_alpha = 0.3
 
 
 def draw_layout(universe):
